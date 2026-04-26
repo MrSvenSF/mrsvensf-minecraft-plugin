@@ -17,17 +17,22 @@ import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Collections;
+import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
+import java.util.concurrent.ConcurrentHashMap;
 
 public final class SyncItemsService {
 
@@ -38,8 +43,10 @@ public final class SyncItemsService {
 
     private final JavaPlugin plugin;
     private final ConfigSystem configSystem;
+    private final Map<UUID, String> activeSyncKeyByPlayer = new ConcurrentHashMap<>();
     private volatile long lastRemoteWarningMs;
     private volatile long lastKeyWarningMs;
+    private volatile boolean remoteSchemaChecked;
     private BukkitTask cleanupTask;
 
     public SyncItemsService(JavaPlugin plugin, ConfigSystem configSystem) {
@@ -48,7 +55,7 @@ public final class SyncItemsService {
     }
 
     public boolean isEnabled() {
-        return configSystem.isSyncItemsEnabled() && hasAnyCategoryEnabled() && hasSyncKeyConfigured();
+        return configSystem.isSyncItemsEnabled() && hasAnyCategoryEnabled() && hasSyncKeysConfigured();
     }
 
     public void start() {
@@ -70,6 +77,7 @@ public final class SyncItemsService {
             cleanupTask.cancel();
             cleanupTask = null;
         }
+        activeSyncKeyByPlayer.clear();
     }
 
     public void reloadSettings() {
@@ -163,20 +171,27 @@ public final class SyncItemsService {
             return;
         }
 
+        List<String> allowedKeyHashes = resolveAllowedSyncKeyHashes();
+        if (allowedKeyHashes.isEmpty()) {
+            return;
+        }
+
         String sourceServerId = resolveCurrentServerId();
-        String syncKeyHash = resolveSyncKeyHash();
+        String selectedKeyHash = resolveSaveKeyHash(uuid, allowedKeyHashes);
         long expiresAt = calculateExpiresAt();
 
-        if (configSystem.isSyncRemoteDatabaseEnabled()) {
+        if (isRemoteDatabaseUsable()) {
             try {
-                saveToRemote(uuid, data, sourceServerId, syncKeyHash, expiresAt);
+                saveToRemote(uuid, data, sourceServerId, selectedKeyHash, expiresAt);
+                activeSyncKeyByPlayer.remove(uuid);
                 return;
             } catch (Exception exception) {
                 warnRemoteFailure("save", exception);
             }
         }
 
-        saveToLocal(uuid, data, sourceServerId, syncKeyHash, expiresAt);
+        saveToLocal(uuid, data, sourceServerId, selectedKeyHash, expiresAt);
+        activeSyncKeyByPlayer.remove(uuid);
     }
 
     public PlayerSyncData loadPlayerData(UUID uuid) {
@@ -184,25 +199,37 @@ public final class SyncItemsService {
             return null;
         }
 
-        String currentServerId = resolveCurrentServerId();
-        String syncKeyHash = resolveSyncKeyHash();
+        List<String> allowedKeyHashes = resolveAllowedSyncKeyHashes();
+        if (allowedKeyHashes.isEmpty()) {
+            return null;
+        }
 
-        if (configSystem.isSyncRemoteDatabaseEnabled()) {
+        String currentServerId = resolveCurrentServerId();
+
+        if (isRemoteDatabaseUsable()) {
             try {
-                PlayerSyncData remoteData = loadFromRemote(uuid, currentServerId, syncKeyHash);
-                if (remoteData != null && !remoteData.isEmpty()) {
-                    return remoteData;
+                LoadedTransfer transfer = loadFromRemote(uuid, currentServerId, allowedKeyHashes);
+                if (transfer != null && transfer.data() != null && !transfer.data().isEmpty()) {
+                    activeSyncKeyByPlayer.put(uuid, transfer.syncKeyHash());
+                    return transfer.data();
                 }
             } catch (Exception exception) {
                 warnRemoteFailure("load", exception);
             }
         }
 
-        return loadFromLocal(uuid, currentServerId, syncKeyHash);
+        LoadedTransfer localTransfer = loadFromLocal(uuid, currentServerId, allowedKeyHashes);
+        if (localTransfer != null && localTransfer.data() != null && !localTransfer.data().isEmpty()) {
+            activeSyncKeyByPlayer.put(uuid, localTransfer.syncKeyHash());
+            return localTransfer.data();
+        }
+
+        activeSyncKeyByPlayer.remove(uuid);
+        return null;
     }
 
     public void cleanupExpiredTransfers() {
-        if (configSystem.isSyncRemoteDatabaseEnabled()) {
+        if (isRemoteDatabaseUsable()) {
             try {
                 cleanupRemoteExpired();
             } catch (Exception exception) {
@@ -217,11 +244,10 @@ public final class SyncItemsService {
             ensureTable(connection);
 
             String sql = "INSERT INTO `" + resolveSafeTableName() + "` " +
-                    "(uuid, source_server, sync_key_hash, expires_at, storage_data, armor_data, extra_data, enderchest_data, hotbar_data, updated_at) " +
+                    "(uuid, sync_key_hash, source_server, expires_at, storage_data, armor_data, extra_data, enderchest_data, hotbar_data, updated_at) " +
                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) " +
                     "ON DUPLICATE KEY UPDATE " +
                     "source_server = VALUES(source_server), " +
-                    "sync_key_hash = VALUES(sync_key_hash), " +
                     "expires_at = VALUES(expires_at), " +
                     "storage_data = VALUES(storage_data), " +
                     "armor_data = VALUES(armor_data), " +
@@ -232,8 +258,8 @@ public final class SyncItemsService {
 
             try (PreparedStatement statement = connection.prepareStatement(sql)) {
                 statement.setString(1, uuid.toString());
-                statement.setString(2, sourceServerId);
-                statement.setString(3, syncKeyHash);
+                statement.setString(2, syncKeyHash);
+                statement.setString(3, sourceServerId);
                 statement.setLong(4, expiresAt);
                 statement.setString(5, serializeItems(data.storage()));
                 statement.setString(6, serializeItems(data.armor()));
@@ -246,49 +272,67 @@ public final class SyncItemsService {
         }
     }
 
-    private PlayerSyncData loadFromRemote(UUID uuid, String currentServerId, String syncKeyHash) throws Exception {
+    private LoadedTransfer loadFromRemote(UUID uuid, String currentServerId, List<String> allowedKeyHashes) throws Exception {
+        if (allowedKeyHashes.isEmpty()) {
+            return null;
+        }
+
         try (Connection connection = openConnection()) {
             ensureTable(connection);
 
-            String sql = "SELECT source_server, expires_at, storage_data, armor_data, extra_data, enderchest_data, hotbar_data " +
-                    "FROM `" + resolveSafeTableName() + "` WHERE uuid = ? AND sync_key_hash = ?";
+            String placeholders = String.join(",", Collections.nCopies(allowedKeyHashes.size(), "?"));
+            String sql = "SELECT sync_key_hash, source_server, expires_at, storage_data, armor_data, extra_data, enderchest_data, hotbar_data, updated_at " +
+                    "FROM `" + resolveSafeTableName() + "` " +
+                    "WHERE uuid = ? AND sync_key_hash IN (" + placeholders + ") " +
+                    "ORDER BY updated_at DESC";
 
             try (PreparedStatement statement = connection.prepareStatement(sql)) {
                 statement.setString(1, uuid.toString());
-                statement.setString(2, syncKeyHash);
+                int parameterIndex = 2;
+                for (String keyHash : allowedKeyHashes) {
+                    statement.setString(parameterIndex++, keyHash);
+                }
+
                 try (ResultSet resultSet = statement.executeQuery()) {
-                    if (!resultSet.next()) {
-                        return null;
+                    while (resultSet.next()) {
+                        String keyHash = resultSet.getString("sync_key_hash");
+                        String sourceServer = normalizeServerId(resultSet.getString("source_server"));
+                        long expiresAt = resultSet.getLong("expires_at");
+
+                        if (isExpired(expiresAt)) {
+                            deleteRemote(connection, uuid, keyHash);
+                            continue;
+                        }
+
+                        if (sourceServer.equals(normalizeServerId(currentServerId))) {
+                            continue;
+                        }
+
+                        PlayerSyncData data = new PlayerSyncData(
+                                deserializeItems(resultSet.getString("storage_data")),
+                                deserializeItems(resultSet.getString("armor_data")),
+                                deserializeItems(resultSet.getString("extra_data")),
+                                deserializeItems(resultSet.getString("enderchest_data")),
+                                deserializeItems(resultSet.getString("hotbar_data"))
+                        );
+
+                        if (data.isEmpty()) {
+                            deleteRemote(connection, uuid, keyHash);
+                            continue;
+                        }
+
+                        deleteRemote(connection, uuid, keyHash);
+                        return new LoadedTransfer(data, keyHash, null, resultSet.getLong("updated_at"));
                     }
-
-                    String sourceServer = normalizeServerId(resultSet.getString("source_server"));
-                    long expiresAt = resultSet.getLong("expires_at");
-                    if (isExpired(expiresAt)) {
-                        deleteRemote(connection, uuid);
-                        return null;
-                    }
-
-                    if (sourceServer.equals(normalizeServerId(currentServerId))) {
-                        return null;
-                    }
-
-                    PlayerSyncData data = new PlayerSyncData(
-                            deserializeItems(resultSet.getString("storage_data")),
-                            deserializeItems(resultSet.getString("armor_data")),
-                            deserializeItems(resultSet.getString("extra_data")),
-                            deserializeItems(resultSet.getString("enderchest_data")),
-                            deserializeItems(resultSet.getString("hotbar_data"))
-                    );
-
-                    deleteRemote(connection, uuid);
-                    return data.isEmpty() ? null : data;
                 }
             }
         }
+
+        return null;
     }
 
     private void saveToLocal(UUID uuid, PlayerSyncData data, String sourceServerId, String syncKeyHash, long expiresAt) {
-        File targetFile = getLocalFile(uuid);
+        File targetFile = getLocalFile(uuid, syncKeyHash);
         YamlConfiguration local = new YamlConfiguration();
         local.set("uuid", uuid.toString());
         local.set("source-server", sourceServerId);
@@ -307,31 +351,72 @@ public final class SyncItemsService {
         }
     }
 
-    private PlayerSyncData loadFromLocal(UUID uuid, String currentServerId, String syncKeyHash) {
-        File targetFile = getLocalFile(uuid);
-        if (!targetFile.exists()) {
-            return null;
-        }
-
-        YamlConfiguration local = YamlConfiguration.loadConfiguration(targetFile);
-        String sourceServer = normalizeServerId(local.getString("source-server", ""));
-        String storedSyncKeyHash = local.getString("sync-key-hash", "");
-        if (!storedSyncKeyHash.isBlank() && !storedSyncKeyHash.equals(syncKeyHash)) {
-            return null;
-        }
-        long expiresAt = local.getLong("expires-at", 0L);
-        if (expiresAt <= 0L) {
-            long updatedAt = local.getLong("updated-at", 0L);
-            if (updatedAt > 0L) {
-                expiresAt = updatedAt + getExpireDurationMillis();
+    private LoadedTransfer loadFromLocal(UUID uuid, String currentServerId, List<String> allowedKeyHashes) {
+        List<File> candidates = new ArrayList<>();
+        for (String keyHash : allowedKeyHashes) {
+            File keyedFile = getLocalFile(uuid, keyHash);
+            if (keyedFile.exists()) {
+                candidates.add(keyedFile);
             }
         }
 
-        if (isExpired(expiresAt)) {
-            safeDelete(targetFile);
+        File legacyFile = getLegacyLocalFile(uuid);
+        if (legacyFile.exists()) {
+            candidates.add(legacyFile);
+        }
+
+        LoadedTransfer newest = null;
+        for (File file : candidates) {
+            LoadedTransfer candidate = readLocalTransfer(file, currentServerId, allowedKeyHashes);
+            if (candidate == null) {
+                continue;
+            }
+            if (newest == null || candidate.updatedAt() > newest.updatedAt()) {
+                newest = candidate;
+            }
+        }
+
+        if (newest == null) {
             return null;
         }
 
+        if (newest.localFile() != null) {
+            safeDelete(newest.localFile());
+        }
+        return newest;
+    }
+
+    private LoadedTransfer readLocalTransfer(File file, String currentServerId, List<String> allowedKeyHashes) {
+        YamlConfiguration local = YamlConfiguration.loadConfiguration(file);
+
+        String keyHash = local.getString("sync-key-hash", "").trim();
+        if (keyHash.isBlank()) {
+            keyHash = extractKeyHashFromFileName(file.getName());
+        }
+        if (keyHash.isBlank()) {
+            if (allowedKeyHashes.size() == 1) {
+                keyHash = allowedKeyHashes.get(0);
+            } else {
+                return null;
+            }
+        }
+        if (!allowedKeyHashes.contains(keyHash)) {
+            return null;
+        }
+
+        long expiresAt = local.getLong("expires-at", 0L);
+        if (expiresAt <= 0L) {
+            long updatedAtFallback = local.getLong("updated-at", 0L);
+            if (updatedAtFallback > 0L) {
+                expiresAt = updatedAtFallback + getExpireDurationMillis();
+            }
+        }
+        if (isExpired(expiresAt)) {
+            safeDelete(file);
+            return null;
+        }
+
+        String sourceServer = normalizeServerId(local.getString("source-server", ""));
         if (!sourceServer.isBlank() && sourceServer.equals(normalizeServerId(currentServerId))) {
             return null;
         }
@@ -343,9 +428,13 @@ public final class SyncItemsService {
                 deserializeItems(local.getString("data.enderchest", "")),
                 deserializeItems(local.getString("data.hotbar", ""))
         );
+        if (data.isEmpty()) {
+            safeDelete(file);
+            return null;
+        }
 
-        safeDelete(targetFile);
-        return data.isEmpty() ? null : data;
+        long updatedAt = local.getLong("updated-at", file.lastModified());
+        return new LoadedTransfer(data, keyHash, file, updatedAt);
     }
 
     private void cleanupRemoteExpired() throws Exception {
@@ -409,8 +498,8 @@ public final class SyncItemsService {
     private void ensureTable(Connection connection) throws Exception {
         String sql = "CREATE TABLE IF NOT EXISTS `" + resolveSafeTableName() + "` (" +
                 "uuid VARCHAR(36) NOT NULL," +
-                "source_server VARCHAR(128) NULL," +
                 "sync_key_hash VARCHAR(128) NOT NULL DEFAULT ''," +
+                "source_server VARCHAR(128) NULL," +
                 "expires_at BIGINT NOT NULL DEFAULT 0," +
                 "storage_data LONGTEXT NULL," +
                 "armor_data LONGTEXT NULL," +
@@ -418,16 +507,34 @@ public final class SyncItemsService {
                 "enderchest_data LONGTEXT NULL," +
                 "hotbar_data LONGTEXT NULL," +
                 "updated_at BIGINT NOT NULL," +
-                "PRIMARY KEY (uuid)" +
+                "PRIMARY KEY (uuid, sync_key_hash)" +
                 ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4";
 
         try (Statement statement = connection.createStatement()) {
             statement.execute(sql);
         }
 
-        ensureColumn(connection, "source_server VARCHAR(128) NULL");
         ensureColumn(connection, "sync_key_hash VARCHAR(128) NOT NULL DEFAULT ''");
+        ensureColumn(connection, "source_server VARCHAR(128) NULL");
         ensureColumn(connection, "expires_at BIGINT NOT NULL DEFAULT 0");
+
+        if (!remoteSchemaChecked) {
+            ensureCompositePrimaryKey(connection);
+            remoteSchemaChecked = true;
+        }
+    }
+
+    private void ensureCompositePrimaryKey(Connection connection) throws Exception {
+        String sql = "ALTER TABLE `" + resolveSafeTableName() + "` DROP PRIMARY KEY, ADD PRIMARY KEY (uuid, sync_key_hash)";
+        try (Statement statement = connection.createStatement()) {
+            statement.execute(sql);
+        } catch (SQLException exception) {
+            String message = exception.getMessage() == null ? "" : exception.getMessage().toLowerCase(Locale.ROOT);
+            if (message.contains("can't drop") || message.contains("multiple primary key") || message.contains("duplicate")) {
+                return;
+            }
+            throw exception;
+        }
     }
 
     private void ensureColumn(Connection connection, String columnDefinition) throws Exception {
@@ -443,10 +550,11 @@ public final class SyncItemsService {
         }
     }
 
-    private void deleteRemote(Connection connection, UUID uuid) throws Exception {
-        String sql = "DELETE FROM `" + resolveSafeTableName() + "` WHERE uuid = ?";
+    private void deleteRemote(Connection connection, UUID uuid, String keyHash) throws Exception {
+        String sql = "DELETE FROM `" + resolveSafeTableName() + "` WHERE uuid = ? AND sync_key_hash = ?";
         try (PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setString(1, uuid.toString());
+            statement.setString(2, keyHash);
             statement.executeUpdate();
         }
     }
@@ -455,12 +563,36 @@ public final class SyncItemsService {
         return REMOTE_TABLE_NAME;
     }
 
-    private File getLocalFile(UUID uuid) {
+    private File getLocalFile(UUID uuid, String syncKeyHash) {
+        File folder = configSystem.getSyncLocalDatabaseFolder();
+        if (!folder.exists() && !folder.mkdirs()) {
+            throw new IllegalStateException("Lokaler Sync-Ordner konnte nicht erstellt werden: " + folder.getPath());
+        }
+        return new File(folder, uuid + "." + syncKeyHash + ".mysql");
+    }
+
+    private File getLegacyLocalFile(UUID uuid) {
         File folder = configSystem.getSyncLocalDatabaseFolder();
         if (!folder.exists() && !folder.mkdirs()) {
             throw new IllegalStateException("Lokaler Sync-Ordner konnte nicht erstellt werden: " + folder.getPath());
         }
         return new File(folder, uuid + ".mysql");
+    }
+
+    private String extractKeyHashFromFileName(String fileName) {
+        if (fileName == null || fileName.isBlank()) {
+            return "";
+        }
+        String normalized = fileName.trim();
+        if (!normalized.endsWith(".mysql")) {
+            return "";
+        }
+        String withoutExt = normalized.substring(0, normalized.length() - ".mysql".length());
+        int separator = withoutExt.indexOf('.');
+        if (separator < 0 || separator == withoutExt.length() - 1) {
+            return "";
+        }
+        return withoutExt.substring(separator + 1);
     }
 
     private long calculateExpiresAt() {
@@ -495,26 +627,52 @@ public final class SyncItemsService {
         return value.trim().toLowerCase(Locale.ROOT);
     }
 
-    private boolean hasSyncKeyConfigured() {
-        String key = configSystem.getSyncKey();
-        if (key != null && !key.trim().isBlank()) {
+    private boolean hasSyncKeysConfigured() {
+        if (!resolveAllowedSyncKeyHashes().isEmpty()) {
             return true;
         }
 
         long now = System.currentTimeMillis();
         if (now - lastKeyWarningMs >= KEY_WARNING_COOLDOWN_MS) {
             lastKeyWarningMs = now;
-            plugin.getLogger().warning("Sync-Items ist aktiv, aber kein SyncItems.key gesetzt. Sync wurde deaktiviert.");
+            plugin.getLogger().warning("Sync-Items ist aktiv, aber keine SyncItems.keys gesetzt. Sync wurde deaktiviert.");
         }
         return false;
     }
 
-    private String resolveSyncKeyHash() {
-        String key = configSystem.getSyncKey();
-        if (key == null) {
-            return "";
+    private List<String> resolveAllowedSyncKeyHashes() {
+        List<String> keys = configSystem.getSyncKeys();
+        if (keys == null || keys.isEmpty()) {
+            return List.of();
         }
-        return hashKey(key.trim());
+
+        List<String> hashes = new ArrayList<>();
+        for (String key : keys) {
+            if (key == null) {
+                continue;
+            }
+            String normalized = key.trim();
+            if (normalized.isBlank()) {
+                continue;
+            }
+            String hashed = hashKey(normalized);
+            if (!hashes.contains(hashed)) {
+                hashes.add(hashed);
+            }
+        }
+        return List.copyOf(hashes);
+    }
+
+    private String resolveSaveKeyHash(UUID uuid, List<String> allowedKeyHashes) {
+        String active = activeSyncKeyByPlayer.get(uuid);
+        if (active != null && !active.isBlank() && allowedKeyHashes.contains(active)) {
+            return active;
+        }
+        return allowedKeyHashes.get(0);
+    }
+
+    private boolean isRemoteDatabaseUsable() {
+        return configSystem.isDatabaseEnabled() && configSystem.isSyncRemoteDatabaseEnabled();
     }
 
     private String hashKey(String key) {
@@ -612,6 +770,10 @@ public final class SyncItemsService {
     }
 
     private void warnRemoteFailure(String action, Exception exception) {
+        if (!configSystem.isDatabaseEnabled() || !configSystem.isSyncRemoteDatabaseEnabled() || !configSystem.isSyncItemsEnabled()) {
+            return;
+        }
+
         long now = System.currentTimeMillis();
         if (now - lastRemoteWarningMs < REMOTE_WARNING_COOLDOWN_MS) {
             return;
@@ -628,6 +790,9 @@ public final class SyncItemsService {
         return configSystem.isSyncInventoryEnabled()
                 || configSystem.isSyncEnderChestEnabled()
                 || configSystem.isSyncHotbarEnabled();
+    }
+
+    private record LoadedTransfer(PlayerSyncData data, String syncKeyHash, File localFile, long updatedAt) {
     }
 
     public record PlayerSyncData(

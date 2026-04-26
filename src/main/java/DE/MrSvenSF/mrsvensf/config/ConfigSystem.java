@@ -14,6 +14,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 
@@ -84,6 +85,7 @@ public final class ConfigSystem {
     private boolean syncInventoryEnabled;
     private boolean syncEnderChestEnabled;
     private boolean syncHotbarEnabled;
+    private boolean databaseEnabled;
     private boolean syncRemoteDatabaseEnabled;
     private String syncDatabaseHost;
     private int syncDatabasePort;
@@ -91,7 +93,7 @@ public final class ConfigSystem {
     private String syncDatabaseUser;
     private String syncDatabasePassword;
     private String syncDatabaseTable;
-    private String syncKey;
+    private List<String> syncKeys = List.of();
     private int syncExpireAfterSeconds;
     private List<String> configuredModerationCommands = List.of();
     private List<String> configuredPlayerCommands = List.of();
@@ -393,6 +395,11 @@ public final class ConfigSystem {
         return syncRemoteDatabaseEnabled;
     }
 
+    public boolean isDatabaseEnabled() {
+        refreshMainConfigIfChanged();
+        return databaseEnabled;
+    }
+
     public String getSyncDatabaseHost() {
         refreshMainConfigIfChanged();
         refreshSyncItemsConfigIfChanged();
@@ -429,10 +436,18 @@ public final class ConfigSystem {
         return syncDatabaseTable;
     }
 
-    public String getSyncKey() {
+    public List<String> getSyncKeys() {
         refreshMainConfigIfChanged();
         refreshSyncItemsConfigIfChanged();
-        return syncKey;
+        return syncKeys;
+    }
+
+    public String getSyncKey() {
+        List<String> keys = getSyncKeys();
+        if (keys.isEmpty()) {
+            return "";
+        }
+        return keys.get(0);
     }
 
     public int getSyncExpireAfterSeconds() {
@@ -529,6 +544,7 @@ public final class ConfigSystem {
                 "Sync Items.on",
                 "sync.items.on"
         );
+        readDatabaseSettings(config);
 
         String chatPath = config.getString("config.Chat.path", DEFAULT_CHAT_PATH);
         if (chatPath == null || chatPath.isBlank()) {
@@ -894,129 +910,110 @@ public final class ConfigSystem {
         return parentPath + "." + key;
     }
 
+    private void readDatabaseSettings(FileConfiguration config) {
+        ConfigurationSection dbSection = getConfigurationSectionIgnoreCase(config, "DB");
+        if (dbSection == null) {
+            dbSection = getConfigurationSectionIgnoreCase(config, "database");
+        }
+        if (dbSection == null) {
+            dbSection = getConfigurationSectionIgnoreCase(config, "config.DB");
+        }
+        if (dbSection == null) {
+            dbSection = getConfigurationSectionIgnoreCase(config, "config.database");
+        }
+
+        this.databaseEnabled = getSectionBooleanIgnoreCase(dbSection, "on", getBooleanAnyPath(
+                config,
+                true,
+                "DB.on",
+                "DB.On",
+                "database.on",
+                "db.on",
+                "config.DB.on",
+                "config.database.on"
+        ));
+
+        String address = getSectionStringIgnoreCase(dbSection, "address", getStringAnyPath(
+                config,
+                "127.0.0.1:3306",
+                "DB.address",
+                "DB.Address",
+                "database.address",
+                "db.address",
+                "config.DB.address"
+        ));
+        HostAndPort parsedAddress = parseHostAndPort(address == null ? "" : address);
+        this.syncDatabaseHost = parsedAddress.host().isBlank() ? "127.0.0.1" : parsedAddress.host();
+        this.syncDatabasePort = parsedAddress.port() > 0 ? parsedAddress.port() : 3306;
+
+        this.syncDatabaseName = getSectionStringIgnoreCase(dbSection, "database", getStringAnyPath(
+                config,
+                "mrsvensf",
+                "DB.database",
+                "database.database",
+                "db.database"
+        ));
+        this.syncDatabaseUser = getSectionStringIgnoreCase(dbSection, "username", getStringAnyPath(
+                config,
+                "root",
+                "DB.username",
+                "DB.user",
+                "database.username",
+                "database.user",
+                "db.username",
+                "db.user"
+        ));
+        if (syncDatabaseUser == null || syncDatabaseUser.isBlank()) {
+            this.syncDatabaseUser = getSectionStringIgnoreCase(dbSection, "user", "root");
+        }
+        this.syncDatabasePassword = getSectionStringIgnoreCase(dbSection, "password", getStringAnyPath(
+                config,
+                "",
+                "DB.password",
+                "database.password",
+                "db.password"
+        ));
+
+        // Table is intentionally fixed in code for stable updates/migrations.
+        this.syncDatabaseTable = "mrsvensf_sync_items";
+        this.syncRemoteDatabaseEnabled = databaseEnabled;
+    }
+
     private void readSyncItemsSettings(FileConfiguration mainConfigData, FileConfiguration syncData) {
         boolean fallbackSyncOn = getBooleanAnyPath(
                 mainConfigData,
                 syncItemsMainEnabled,
                 "config.SyncItems.on",
                 "config.Sync-Items.on",
-                "config.Sync Items.on",
-                "sync-items.on",
-                "Sync-Items.on",
-                "Sync Items.on",
-                "sync.items.on",
-                "config.Sync-Items.on",
                 "config.Sync Items.on"
         );
         boolean fallbackInventoryOn = getBooleanAnyPath(
                 mainConfigData,
                 true,
+                "config.SyncItems.inventory.on",
                 "sync-items.inventory",
-                "sync-items.inventory.on",
-                "Sync-Items.inventory",
-                "Sync Items.inventory",
-                "Sync Items.inventory.on"
+                "sync-items.inventory.on"
         );
         boolean fallbackEnderChestOn = getBooleanAnyPath(
                 mainConfigData,
                 true,
+                "config.SyncItems.enderchest.on",
                 "sync-items.enderchest",
-                "sync-items.ender-chest",
-                "sync-items.enderchest.on",
-                "Sync-Items.enderchest",
-                "Sync Items.enderchest",
-                "Sync Items.enderchest.on"
+                "sync-items.enderchest.on"
         );
         boolean fallbackHotbarOn = getBooleanAnyPath(
                 mainConfigData,
                 true,
+                "config.SyncItems.hotbar.on",
                 "sync-items.hotbar",
-                "sync-items.hotbar.on",
-                "Sync-Items.hotbar",
-                "Sync Items.hotbar",
-                "Sync Items.hotbar.on"
-        );
-        boolean fallbackDbOn = getBooleanAnyPath(
-                mainConfigData,
-                true,
-                "sync-items.database.on",
-                "sync-items.mysql.on",
-                "Sync-Items.database.on",
-                "Sync Items.database.on",
-                "Sync Items.mysql.on"
-        );
-        String fallbackDbHost = getStringAnyPath(
-                mainConfigData,
-                "127.0.0.1",
-                "sync-items.database.host",
-                "sync-items.mysql.host",
-                "Sync-Items.database.host",
-                "Sync Items.database.host",
-                "Sync Items.mysql.host"
-        );
-        int fallbackDbPort = getIntAnyPath(
-                mainConfigData,
-                3306,
-                "sync-items.database.port",
-                "sync-items.mysql.port",
-                "Sync-Items.database.port",
-                "Sync Items.database.port",
-                "Sync Items.mysql.port"
-        );
-        String fallbackDbName = getStringAnyPath(
-                mainConfigData,
-                "mrsvensf",
-                "sync-items.database.name",
-                "sync-items.database.database",
-                "sync-items.mysql.database",
-                "Sync-Items.database.name",
-                "Sync Items.database.name",
-                "Sync Items.mysql.database"
-        );
-        String fallbackDbUser = getStringAnyPath(
-                mainConfigData,
-                "root",
-                "sync-items.database.user",
-                "sync-items.mysql.user",
-                "Sync-Items.database.user",
-                "Sync Items.database.user",
-                "Sync Items.mysql.user"
-        );
-        String fallbackDbPassword = getStringAnyPath(
-                mainConfigData,
-                "",
-                "sync-items.database.password",
-                "sync-items.mysql.password",
-                "Sync-Items.database.password",
-                "Sync Items.database.password",
-                "Sync Items.mysql.password"
-        );
-        String fallbackDbTable = getStringAnyPath(
-                mainConfigData,
-                "mrsvensf_sync_items",
-                "sync-items.database.table",
-                "sync-items.mysql.table",
-                "Sync-Items.database.table",
-                "Sync Items.database.table",
-                "Sync Items.mysql.table"
-        );
-        String fallbackSyncKey = getStringAnyPath(
-                mainConfigData,
-                "",
-                "sync-items.key",
-                "sync.items.key",
-                "SyncItems.key",
-                "config.SyncItems.key",
-                "config.Sync-Items.key"
+                "sync-items.hotbar.on"
         );
         int fallbackExpireSeconds = getIntAnyPath(
                 mainConfigData,
                 180,
+                "config.SyncItems.expire-after-seconds",
                 "sync-items.expire-after-seconds",
-                "sync-items.delete-after-seconds",
-                "SyncItems.expire-after-seconds",
-                "SyncItems.delete-after-seconds",
-                "config.SyncItems.expire-after-seconds"
+                "sync-items.delete-after-seconds"
         );
 
         boolean syncItemsConfigEnabled = getBooleanAnyPath(
@@ -1035,10 +1032,7 @@ public final class ConfigSystem {
                 "SyncItems.inventory.on",
                 "SyncItems.inventory",
                 "sync-items.inventory",
-                "sync-items.inventory.on",
-                "Sync-Items.inventory",
-                "Sync Items.inventory",
-                "Sync Items.inventory.on"
+                "sync-items.inventory.on"
         );
         this.syncEnderChestEnabled = getBooleanAnyPath(
                 syncData,
@@ -1047,10 +1041,7 @@ public final class ConfigSystem {
                 "SyncItems.enderchest",
                 "sync-items.enderchest",
                 "sync-items.ender-chest",
-                "sync-items.enderchest.on",
-                "Sync-Items.enderchest",
-                "Sync Items.enderchest",
-                "Sync Items.enderchest.on"
+                "sync-items.enderchest.on"
         );
         this.syncHotbarEnabled = getBooleanAnyPath(
                 syncData,
@@ -1058,108 +1049,7 @@ public final class ConfigSystem {
                 "SyncItems.hotbar.on",
                 "SyncItems.hotbar",
                 "sync-items.hotbar",
-                "sync-items.hotbar.on",
-                "Sync-Items.hotbar",
-                "Sync Items.hotbar",
-                "Sync Items.hotbar.on"
-        );
-        this.syncRemoteDatabaseEnabled = getBooleanAnyPath(
-                syncData,
-                fallbackDbOn,
-                "DB.on",
-                "database.on",
-                "sync-items.database.on",
-                "sync-items.mysql.on",
-                "Sync-Items.database.on",
-                "Sync Items.database.on",
-                "Sync Items.mysql.on"
-        );
-
-        String dbAddress = getStringAnyPath(
-                syncData,
-                "",
-                "DB.address",
-                "database.address",
-                "sync-items.database.address",
-                "sync-items.mysql.address"
-        );
-        HostAndPort parsedAddress = parseHostAndPort(dbAddress);
-
-        this.syncDatabaseHost = getStringAnyPath(
-                syncData,
-                parsedAddress.host().isBlank() ? fallbackDbHost : parsedAddress.host(),
-                "DB.host",
-                "database.host",
-                "sync-items.database.host",
-                "sync-items.mysql.host",
-                "Sync-Items.database.host",
-                "Sync Items.database.host",
-                "Sync Items.mysql.host"
-        );
-        this.syncDatabasePort = getIntAnyPath(
-                syncData,
-                parsedAddress.port() > 0 ? parsedAddress.port() : fallbackDbPort,
-                "DB.port",
-                "database.port",
-                "sync-items.database.port",
-                "sync-items.mysql.port",
-                "Sync-Items.database.port",
-                "Sync Items.database.port",
-                "Sync Items.mysql.port"
-        );
-        this.syncDatabaseName = getStringAnyPath(
-                syncData,
-                fallbackDbName,
-                "DB.database",
-                "database.database",
-                "sync-items.database.name",
-                "sync-items.database.database",
-                "sync-items.mysql.database",
-                "Sync-Items.database.name",
-                "Sync Items.database.name",
-                "Sync Items.mysql.database"
-        );
-        this.syncDatabaseUser = getStringAnyPath(
-                syncData,
-                fallbackDbUser,
-                "DB.username",
-                "DB.user",
-                "database.username",
-                "database.user",
-                "sync-items.database.user",
-                "sync-items.mysql.user",
-                "Sync-Items.database.user",
-                "Sync Items.database.user",
-                "Sync Items.mysql.user"
-        );
-        this.syncDatabasePassword = getStringAnyPath(
-                syncData,
-                fallbackDbPassword,
-                "DB.password",
-                "database.password",
-                "sync-items.database.password",
-                "sync-items.mysql.password",
-                "Sync-Items.database.password",
-                "Sync Items.database.password",
-                "Sync Items.mysql.password"
-        );
-        this.syncDatabaseTable = getStringAnyPath(
-                syncData,
-                fallbackDbTable,
-                "DB.table",
-                "database.table",
-                "sync-items.database.table",
-                "sync-items.mysql.table",
-                "Sync-Items.database.table",
-                "Sync Items.database.table",
-                "Sync Items.mysql.table"
-        );
-        this.syncKey = getStringAnyPath(
-                syncData,
-                fallbackSyncKey,
-                "SyncItems.key",
-                "sync-items.key",
-                "sync.items.key"
+                "sync-items.hotbar.on"
         );
         this.syncExpireAfterSeconds = getIntAnyPath(
                 syncData,
@@ -1169,26 +1059,47 @@ public final class ConfigSystem {
                 "sync-items.expire-after-seconds",
                 "sync-items.delete-after-seconds"
         );
-
-        if (syncDatabaseHost == null || syncDatabaseHost.isBlank()) {
-            this.syncDatabaseHost = "127.0.0.1";
-        }
-        if (syncDatabasePort <= 0) {
-            this.syncDatabasePort = 3306;
-        }
-        if (syncDatabaseName == null || syncDatabaseName.isBlank()) {
-            this.syncDatabaseName = "mrsvensf";
-        }
-        if (syncDatabaseUser == null || syncDatabaseUser.isBlank()) {
-            this.syncDatabaseUser = "root";
-        }
-        if (syncDatabaseTable == null || syncDatabaseTable.isBlank()) {
-            this.syncDatabaseTable = "mrsvensf_sync_items";
-        }
-        this.syncKey = syncKey == null ? "" : syncKey.trim();
         if (syncExpireAfterSeconds <= 0) {
             this.syncExpireAfterSeconds = 180;
         }
+
+        LinkedHashSet<String> normalizedKeys = new LinkedHashSet<>();
+        addNormalizedKeys(normalizedKeys, getStringListAnyPath(
+                syncData,
+                "SyncItems.keys",
+                "sync-items.keys",
+                "sync.items.keys"
+        ));
+        addNormalizedKeys(normalizedKeys, getStringListAnyPath(
+                mainConfigData,
+                "config.SyncItems.keys",
+                "sync-items.keys",
+                "sync.items.keys"
+        ));
+
+        String legacySingleKey = getStringAnyPath(
+                syncData,
+                "",
+                "SyncItems.key",
+                "sync-items.key",
+                "sync.items.key"
+        );
+        if (legacySingleKey != null && !legacySingleKey.isBlank()) {
+            normalizedKeys.add(legacySingleKey.trim());
+        }
+
+        String legacyMainSingleKey = getStringAnyPath(
+                mainConfigData,
+                "",
+                "config.SyncItems.key",
+                "sync-items.key",
+                "sync.items.key"
+        );
+        if (legacyMainSingleKey != null && !legacyMainSingleKey.isBlank()) {
+            normalizedKeys.add(legacyMainSingleKey.trim());
+        }
+
+        this.syncKeys = List.copyOf(normalizedKeys);
     }
 
     private HostAndPort parseHostAndPort(String value) {
@@ -1322,6 +1233,20 @@ public final class ConfigSystem {
         return defaultValue;
     }
 
+    private boolean getSectionBooleanIgnoreCase(ConfigurationSection section, String key, boolean defaultValue) {
+        if (section == null) {
+            return defaultValue;
+        }
+
+        for (String existingKey : section.getKeys(false)) {
+            if (existingKey.equalsIgnoreCase(key)) {
+                return section.getBoolean(existingKey, defaultValue);
+            }
+        }
+
+        return defaultValue;
+    }
+
     private boolean getBooleanAnyPath(FileConfiguration config, boolean defaultValue, String... paths) {
         for (String path : paths) {
             if (path == null || path.isBlank()) {
@@ -1348,6 +1273,37 @@ public final class ConfigSystem {
             }
         }
         return defaultValue;
+    }
+
+    private List<String> getStringListAnyPath(FileConfiguration config, String... paths) {
+        for (String path : paths) {
+            if (path == null || path.isBlank()) {
+                continue;
+            }
+            if (!config.contains(path)) {
+                continue;
+            }
+            List<String> values = config.getStringList(path);
+            if (values != null && !values.isEmpty()) {
+                return values;
+            }
+        }
+        return List.of();
+    }
+
+    private void addNormalizedKeys(LinkedHashSet<String> target, List<String> keys) {
+        if (keys == null || keys.isEmpty()) {
+            return;
+        }
+        for (String key : keys) {
+            if (key == null) {
+                continue;
+            }
+            String normalized = key.trim();
+            if (!normalized.isBlank()) {
+                target.add(normalized);
+            }
+        }
     }
 
     private int getIntAnyPath(FileConfiguration config, int defaultValue, String... paths) {

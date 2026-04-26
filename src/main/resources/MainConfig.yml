@@ -29,5 +29,13 @@ config:
 
 update:
   on: true
-  version: "v0.1.2"
+  version: "v0.2"
   auto-update: false
+
+DB:
+  on: false
+  type: mysql # mysql / mariadb
+  address: "127.0.0.1:3306"
+  database: "mrsvensf"
+  username: "root"
+  password: ""
