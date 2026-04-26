@@ -25,7 +25,7 @@ config:
 
 update:
   on: true
-  version: "v0.1"
+  version: "v0.1.1"
   auto-update: false
 
 
