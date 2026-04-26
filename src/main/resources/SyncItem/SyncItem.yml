@@ -1,0 +1,18 @@
+DB:
+  on: false
+  type: mysql # mysql / mariadb
+  address: "127.0.0.1:3306"
+  database: "mrsvensf"
+  username: "root"
+  password: ""
+
+SyncItems:
+  on: false
+  key: "YOUR-NETWORK-SYNC-KEY"
+  expire-after-seconds: 180
+  inventory:
+    on: true
+  enderchest:
+    on: true
+  hotbar:
+    on: true

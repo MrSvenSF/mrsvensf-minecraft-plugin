@@ -1,0 +1,14 @@
+-cp
+C:\\Users\\Sven\\.m2\\repository\\io\\papermc\\paper\\paper-api\\1.21.11-R0.1-SNAPSHOT\\paper-api-1.21.11-R0.1-SNAPSHOT.jar;C:\\Users\\Sven\\.m2\\repository\\me\\clip\\placeholderapi\\2.11.6\\placeholderapi-2.11.6.jar;C:\\Users\\Sven\\.m2\\repository\\net\\luckperms\\api\\5.4\\api-5.4.jar;C:\\Users\\Sven\\.m2\\repository\\com\\mysql\\mysql-connector-j\\8.4.0\\mysql-connector-j-8.4.0.jar
+-d
+target/manual-classes
+"C:\\Users\\Sven\\Documents\\Mc Server\\MrSvenSF\\mrsvensf.com server\\src\\main\\java\\DE\\MrSvenSF\\mrsvensf\\MrSvenSF.java"
+"C:\\Users\\Sven\\Documents\\Mc Server\\MrSvenSF\\mrsvensf.com server\\src\\main\\java\\DE\\MrSvenSF\\mrsvensf\\chat\\ChatListener.java"
+"C:\\Users\\Sven\\Documents\\Mc Server\\MrSvenSF\\mrsvensf.com server\\src\\main\\java\\DE\\MrSvenSF\\mrsvensf\\command\\MrSvenSFCommand.java"
+"C:\\Users\\Sven\\Documents\\Mc Server\\MrSvenSF\\mrsvensf.com server\\src\\main\\java\\DE\\MrSvenSF\\mrsvensf\\config\\ConfigSystem.java"
+"C:\\Users\\Sven\\Documents\\Mc Server\\MrSvenSF\\mrsvensf.com server\\src\\main\\java\\DE\\MrSvenSF\\mrsvensf\\message\\MessageService.java"
+"C:\\Users\\Sven\\Documents\\Mc Server\\MrSvenSF\\mrsvensf.com server\\src\\main\\java\\DE\\MrSvenSF\\mrsvensf\\spawn\\SpawnListener.java"
+"C:\\Users\\Sven\\Documents\\Mc Server\\MrSvenSF\\mrsvensf.com server\\src\\main\\java\\DE\\MrSvenSF\\mrsvensf\\spawn\\SpawnService.java"
+"C:\\Users\\Sven\\Documents\\Mc Server\\MrSvenSF\\mrsvensf.com server\\src\\main\\java\\DE\\MrSvenSF\\mrsvensf\\sync\\SyncItemsListener.java"
+"C:\\Users\\Sven\\Documents\\Mc Server\\MrSvenSF\\mrsvensf.com server\\src\\main\\java\\DE\\MrSvenSF\\mrsvensf\\sync\\SyncItemsService.java"
+"C:\\Users\\Sven\\Documents\\Mc Server\\MrSvenSF\\mrsvensf.com server\\src\\main\\java\\DE\\MrSvenSF\\mrsvensf\\update\\UpdateService.java"

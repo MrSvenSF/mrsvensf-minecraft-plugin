@@ -23,9 +23,11 @@ config:
   Commands:
     path: "CommandsConfig.yml"
 
+  SyncItems:
+    on: true
+    path: "SyncItem/SyncItem.yml"
+
 update:
   on: true
-  version: "v0.1.1"
+  version: "v0.1.2"
   auto-update: false
-
-

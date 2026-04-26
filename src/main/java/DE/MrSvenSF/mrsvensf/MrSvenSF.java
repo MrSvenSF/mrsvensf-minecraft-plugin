@@ -6,6 +6,8 @@ import DE.MrSvenSF.mrsvensf.config.ConfigSystem;
 import DE.MrSvenSF.mrsvensf.message.MessageService;
 import DE.MrSvenSF.mrsvensf.spawn.SpawnListener;
 import DE.MrSvenSF.mrsvensf.spawn.SpawnService;
+import DE.MrSvenSF.mrsvensf.sync.SyncItemsListener;
+import DE.MrSvenSF.mrsvensf.sync.SyncItemsService;
 import DE.MrSvenSF.mrsvensf.update.UpdateService;
 import org.bukkit.command.PluginCommand;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -23,6 +25,8 @@ public final class MrSvenSF extends JavaPlugin {
     private ChatListener chatListener;
     private SpawnService spawnService;
     private SpawnListener spawnListener;
+    private SyncItemsService syncItemsService;
+    private SyncItemsListener syncItemsListener;
     private MessageService messageService;
     private UpdateService updateService;
 
@@ -45,6 +49,10 @@ public final class MrSvenSF extends JavaPlugin {
         this.spawnService = new SpawnService(configSystem);
         this.spawnListener = new SpawnListener(this, spawnService);
         getServer().getPluginManager().registerEvents(spawnListener, this);
+        this.syncItemsService = new SyncItemsService(this, configSystem);
+        this.syncItemsService.start();
+        this.syncItemsListener = new SyncItemsListener(this, syncItemsService);
+        getServer().getPluginManager().registerEvents(syncItemsListener, this);
         this.updateService = new UpdateService(this, configSystem);
         this.updateService.start();
 
@@ -62,6 +70,10 @@ public final class MrSvenSF extends JavaPlugin {
         if (updateService != null) {
             updateService.stop();
         }
+        if (syncItemsService != null) {
+            syncItemsService.persistOnlinePlayersNow();
+            syncItemsService.stop();
+        }
     }
 
     public boolean reloadAllConfigs() {
@@ -69,6 +81,9 @@ public final class MrSvenSF extends JavaPlugin {
             configSystem.reloadAll();
             if (chatListener != null) {
                 chatListener.reloadRuntimeState();
+            }
+            if (syncItemsService != null) {
+                syncItemsService.reloadSettings();
             }
             if (updateService != null) {
                 updateService.restartAutoUpdater();

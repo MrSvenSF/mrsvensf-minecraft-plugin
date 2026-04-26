@@ -1,7 +1,7 @@
 spawn:
-  on: true
+  on: false
   # If true, players are teleported to this spawn when they join the server.
-  onjoin: true
+  onjoin: false
   world: world
   x: 0.5
   y: 100.0
