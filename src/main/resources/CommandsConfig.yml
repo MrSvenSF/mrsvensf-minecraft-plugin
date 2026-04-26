@@ -1,0 +1,24 @@
+
+moderation:
+  reload:
+    action: "reload"
+    command: "/mrsvensf reload"
+    permission: "mrsvensf.admin.reload"
+  version:
+    action: "version"
+    command: "/mrsvensf version"
+    permission: "mrsvensf.admin.version"
+  update:
+    action: "update"
+    command: "/mrsvensf update"
+    permission: "mrsvensf.admin.update"
+  setspawn:
+    action: "setspawn"
+    command: "/mrsvensf setspawn"
+    permission: "mrsvensf.admin.setspawn"
+
+player:
+  spawn:
+    action: "spawn"
+    command: "/spawn"
+    permission: "mrsvensf.player.spawn"

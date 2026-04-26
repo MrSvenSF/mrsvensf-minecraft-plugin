@@ -1,0 +1,31 @@
+colors:
+  Prime-Colors-One: "<#fa3cda>{message}</#ffffff>"
+  Prime-Colors-Two: "<#ffffff>{message}</#1cd9eb>"
+  features:
+    mini-message: true
+    legacy-colors: true
+
+config:
+  Chat:
+    on: true
+    path: "Chat/ChatMessageConfig.yml"
+    features:
+      mini-message: true
+      legacy-colors: true
+
+  Spawn:
+    on: true
+    path: "Spawn/SpawnConfig.yml"
+
+  PluginMessages:
+    path: "Chat/PLMessage.yml"
+
+  Commands:
+    path: "CommandsConfig.yml"
+
+update:
+  on: true
+  version: "v0.1"
+  auto-update: false
+
+

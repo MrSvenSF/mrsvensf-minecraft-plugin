@@ -1,0 +1,32 @@
+Join-and-Leave-Messages:
+  on: true
+  Join:
+    Message: "&8[&a+&8]&r{prefix} &7{player} "
+  Leave:
+    Message: "&8[&c-&8]&r{prefix} &7{player} "
+
+  first join message:
+    on: true
+    Message: "&8[&a+&8]{prefix} {player} &7has joined the server for the first time!"
+
+Chat-Messages:
+  on: true
+  Format: "{prefix} &7{player} &8››&r &7{message}"
+
+# dieser Part ist derzeitlich in der Arbeit
+#  groups:
+#    on: true
+#    inhaber:
+#      Format: "{prefix} {player} &8››&r <gradient:#f235e6:#87d3ff>{message}</gradient>"
+
+death messages:
+  death-message: false
+  custom-messages:
+    on: false
+    Format: "{prefix} {player} died from {death}"
+
+advancements:
+  advancement-message: false
+  custom-messages:
+    on: false
+    Format: "{prefix} {player} got the advancement {advancement}"

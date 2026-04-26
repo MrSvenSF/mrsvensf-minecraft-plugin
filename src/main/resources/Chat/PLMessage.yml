@@ -1,0 +1,52 @@
+no-permission:
+  - "{Prime-Colors-One}This command can only be used with higher permission.{/Prime-Colors-One}"
+
+command-disabled:
+  - "{Prime-Colors-One}this command is currently disabled.{/Prime-Colors-One}"
+
+player-only:
+  - "{Prime-Colors-One}This command can only be used by a player with higher permission.{/Prime-Colors-One}"
+
+reload:
+  - "{Prime-Colors-One}MrSvenSF{/Prime-Colors-One} {Prime-Colors-Two}plugin reloaded{/Prime-Colors-Two}"
+  - "{Prime-Colors-Two}----------------------{/Prime-Colors-Two}"
+
+reload-failed:
+  - "{Prime-Colors-One}reload failed. check console.{/Prime-Colors-One}"
+
+version:
+  - "{Prime-Colors-One}looking for updates...{/Prime-Colors-One}"
+  - "{Prime-Colors-Two}----------------------{/Prime-Colors-Two}"
+  - "{Prime-Colors-One}your version{/Prime-Colors-One}&8: {Prime-Colors-Two}{version}{/Prime-Colors-Two}"
+  - "{Prime-Colors-One}latest version{/Prime-Colors-One}&8: {Prime-Colors-Two}{latest}{/Prime-Colors-Two}"
+  - "{Prime-Colors-One}if you want to update, use{/Prime-Colors-One} {Prime-Colors-Two}/mrsvensf update{/Prime-Colors-Two}"
+
+update:
+  - "{Prime-Colors-One}looking for updates...{/Prime-Colors-One}"
+  - "{Prime-Colors-Two}----------------------{/Prime-Colors-Two}"
+  - "{Prime-Colors-One}your version{/Prime-Colors-One}&8: {Prime-Colors-Two}{version}{/Prime-Colors-Two}"
+  - "{Prime-Colors-One}latest version{/Prime-Colors-One}&8: {Prime-Colors-Two}{latest}{/Prime-Colors-Two}"
+  - "{Prime-Colors-One}downloading update...{/Prime-Colors-One}"
+  - "{Prime-Colors-One}plugin file replaced in plugins folder.{/Prime-Colors-One}"
+
+update-no-change:
+  - "{Prime-Colors-One}you already use the latest version.{/Prime-Colors-One}"
+  - "{Prime-Colors-One}version{/Prime-Colors-One}&8: {Prime-Colors-Two}{version}{/Prime-Colors-Two}"
+
+update-error:
+  - "{Prime-Colors-One}update check failed.{/Prime-Colors-One}"
+  - "{Prime-Colors-One}reason{/Prime-Colors-One}&8: {Prime-Colors-Two}{error}{/Prime-Colors-Two}"
+
+spawn-set:
+  - "{Prime-Colors-One}spawn was saved.{/Prime-Colors-One}"
+  - "{Prime-Colors-One}world{/Prime-Colors-One}&8: {Prime-Colors-Two}{world}{/Prime-Colors-Two}"
+  - "{Prime-Colors-One}pos{/Prime-Colors-One}&8: {Prime-Colors-Two}{x} {y} {z}{/Prime-Colors-Two}"
+
+spawn-teleported:
+  - "{Prime-Colors-One}teleported to spawn.{/Prime-Colors-One}"
+
+spawn-not-set:
+  - "{Prime-Colors-One}spawn is not configured correctly in SpawnConfig.yml.{/Prime-Colors-One}"
+
+spawn-disabled:
+  - "{Prime-Colors-One}spawn system is disabled in MainConfig.yml or SpawnConfig.yml.{/Prime-Colors-One}"
