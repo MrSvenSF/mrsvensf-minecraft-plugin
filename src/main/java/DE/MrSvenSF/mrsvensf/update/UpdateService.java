@@ -11,6 +11,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -200,6 +201,9 @@ public final class UpdateService {
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
                 return UpdateResult.failed(info, "Download failed with HTTP " + response.statusCode());
             }
+            if (!looksLikeJar(response.body())) {
+                return UpdateResult.failed(info, "Downloaded file is empty or not a valid jar archive.");
+            }
 
             Path targetPath = resolveCurrentJarPath();
             Path pluginDirectory = targetPath.getParent();
@@ -211,9 +215,7 @@ public final class UpdateService {
             Path tempPath = pluginDirectory.resolve(targetJarName + ".download");
 
             Files.write(tempPath, response.body());
-            Files.move(tempPath, targetPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-
-            configSystem.setConfiguredVersion(info.latestVersion());
+            moveDownloadedJar(tempPath, targetPath);
             return UpdateResult.success(info, targetPath.toString());
         } catch (Exception exception) {
             return UpdateResult.failed(info, "Download failed: " + exception.getMessage());
@@ -255,17 +257,56 @@ public final class UpdateService {
 
         String version = unescapeJsonSlashes(extractByPattern(trimmed, JSON_TAG_NAME_PATTERN));
 
-        String jarDownload = "";
+        String firstJarDownload = "";
+        String preferredJarDownload = "";
         Matcher urlMatcher = JSON_DOWNLOAD_URL_PATTERN.matcher(trimmed);
         while (urlMatcher.find()) {
             String candidate = unescapeJsonSlashes(urlMatcher.group(1).trim());
             if (candidate.toLowerCase(Locale.ROOT).endsWith(".jar")) {
-                jarDownload = candidate;
-                break;
+                if (firstJarDownload.isBlank()) {
+                    firstJarDownload = candidate;
+                }
+                if (isPreferredPluginJar(candidate)) {
+                    preferredJarDownload = candidate;
+                    break;
+                }
             }
         }
 
-        return new ParsedRemote(version, jarDownload);
+        return new ParsedRemote(version, preferredJarDownload.isBlank() ? firstJarDownload : preferredJarDownload);
+    }
+
+    private boolean isPreferredPluginJar(String downloadUrl) {
+        String fileName = extractFileName(downloadUrl).toLowerCase(Locale.ROOT);
+        return fileName.contains("mrsvensf") && fileName.endsWith(".jar");
+    }
+
+    private String extractFileName(String downloadUrl) {
+        if (downloadUrl == null || downloadUrl.isBlank()) {
+            return "";
+        }
+        String normalized = downloadUrl.trim();
+        int queryIndex = normalized.indexOf('?');
+        if (queryIndex >= 0) {
+            normalized = normalized.substring(0, queryIndex);
+        }
+        int slashIndex = normalized.lastIndexOf('/');
+        return slashIndex >= 0 ? normalized.substring(slashIndex + 1) : normalized;
+    }
+
+    private boolean looksLikeJar(byte[] body) {
+        return body != null
+                && body.length > 4
+                && body[0] == 'P'
+                && body[1] == 'K';
+    }
+
+    private void moveDownloadedJar(Path tempPath, Path targetPath) throws Exception {
+        try {
+            Files.move(tempPath, targetPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+        } catch (AtomicMoveNotSupportedException exception) {
+            Files.move(tempPath, targetPath, StandardCopyOption.REPLACE_EXISTING);
+        }
     }
 
     private String extractByPattern(String input, Pattern pattern) {

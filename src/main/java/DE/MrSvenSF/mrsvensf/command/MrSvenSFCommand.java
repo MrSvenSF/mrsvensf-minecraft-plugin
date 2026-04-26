@@ -33,8 +33,9 @@ public final class MrSvenSFCommand implements CommandExecutor, TabCompleter {
 
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
-        if (command.getName().equalsIgnoreCase("spawn")) {
-            ConfigSystem.CommandDefinition playerCommand = plugin.getConfigSystem().resolvePlayerCommand(command.getName());
+        String invokedCommand = resolveInvokedCommandName(command, label);
+        if (plugin.getConfigSystem().isPlayerRootCommand(invokedCommand)) {
+            ConfigSystem.CommandDefinition playerCommand = plugin.getConfigSystem().resolvePlayerCommand(invokedCommand);
             if (playerCommand == null) {
                 messageService.send(sender, "command-disabled");
                 return true;
@@ -52,13 +53,18 @@ public final class MrSvenSFCommand implements CommandExecutor, TabCompleter {
             return handleSpawn(sender);
         }
 
+        if (!plugin.getConfigSystem().isModerationRootCommand(invokedCommand)) {
+            messageService.send(sender, "command-disabled");
+            return true;
+        }
+
         if (args.length == 0) {
             messageService.sendConfiguredCommands(sender);
             return true;
         }
 
         String subCommandInput = args[0].toLowerCase(Locale.ROOT);
-        ConfigSystem.CommandDefinition moderationCommand = plugin.getConfigSystem().resolveModerationCommand(subCommandInput);
+        ConfigSystem.CommandDefinition moderationCommand = plugin.getConfigSystem().resolveModerationCommand(invokedCommand, subCommandInput);
         if (moderationCommand == null) {
             messageService.sendConfiguredCommands(sender);
             return true;
@@ -212,7 +218,8 @@ public final class MrSvenSFCommand implements CommandExecutor, TabCompleter {
 
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
-        if (command.getName().equalsIgnoreCase("spawn")) {
+        String invokedCommand = resolveInvokedCommandName(command, alias);
+        if (plugin.getConfigSystem().isPlayerRootCommand(invokedCommand)) {
             return Collections.emptyList();
         }
 
@@ -223,6 +230,9 @@ public final class MrSvenSFCommand implements CommandExecutor, TabCompleter {
         String input = args[0].toLowerCase(Locale.ROOT);
         return plugin.getConfigSystem().getEnabledCommandDefinitions("moderation")
                 .stream()
+                .filter(definition -> plugin.getConfigSystem()
+                        .getPrimaryCommandName(definition.command())
+                        .equalsIgnoreCase(invokedCommand))
                 .filter(definition -> {
                     String action = definition.action() == null ? "" : definition.action().trim().toLowerCase(Locale.ROOT);
                     if (action.isBlank()) {
@@ -241,6 +251,22 @@ public final class MrSvenSFCommand implements CommandExecutor, TabCompleter {
                 .distinct()
                 .filter(option -> option.toLowerCase(Locale.ROOT).startsWith(input))
                 .toList();
+    }
+
+    private String resolveInvokedCommandName(Command command, String label) {
+        String raw = label == null || label.isBlank() ? command.getName() : label;
+        if (raw == null) {
+            return "";
+        }
+        String normalized = raw.trim();
+        if (normalized.startsWith("/")) {
+            normalized = normalized.substring(1);
+        }
+        int namespaceIndex = normalized.indexOf(':');
+        if (namespaceIndex >= 0 && namespaceIndex < normalized.length() - 1) {
+            normalized = normalized.substring(namespaceIndex + 1);
+        }
+        return normalized.toLowerCase(Locale.ROOT);
     }
 
     private String defaultPermissionForModerationAction(String action) {

@@ -1,33 +1,44 @@
+# Paper plugin descriptor.
+
+# Plugin name shown by the server.
 name: MrSvenSF
-version: 'v0.2'
+
+# Filled from pom.xml during Maven build.
+version: '${project.version}'
+
+# Plugin main class.
 main: DE.MrSvenSF.mrsvensf.MrSvenSF
+
+# Paper/Bukkit API version.
 api-version: '1.21'
+
+# Plugin author.
 authors: [ MrSvenSF ]
+
+# Plugin website.
 website: mrsvensf.com
+
+# Optional integrations.
 softdepend: [ PlaceholderAPI, LuckPerms ]
-commands:
-  mrsvensf:
-    description: Main command for mrsvensf plugin
-    usage: /mrsvensf <reload|version|update|setspawn>
-  spawn:
-    description: Teleport to configured spawn
-    usage: /spawn
+
+# Permission metadata.
 permissions:
-  mrsvensf.admin.use:
-    description: Allows using /mrsvensf command
-    default: op
+  # Allows config reload.
   mrsvensf.admin.reload:
-    description: Allows reloading all mrsvensf configs
     default: op
+
+  # Allows version checks.
   mrsvensf.admin.version:
-    description: Allows checking current and latest plugin version
     default: op
+
+  # Allows manual updates.
   mrsvensf.admin.update:
-    description: Allows downloading plugin updates
     default: op
+
+  # Allows setting spawn.
   mrsvensf.admin.setspawn:
-    description: Allows setting the spawn position
     default: op
+
+  # Allows spawn teleport.
   mrsvensf.player.spawn:
-    description: Allows using /spawn
     default: true

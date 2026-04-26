@@ -1,11 +1,26 @@
-SyncItems:
-  on: false
-  keys:
-    - "YOUR-NETWORK-SYNC-KEY"
-  expire-after-seconds: 180
-  inventory:
-    on: true
-  enderchest:
-    on: true
-  hotbar:
-    on: true
+# Sync Items settings. Requires MainConfig.yml DB.enabled true.
+
+# Enables item sync.
+enabled: false
+
+# Transfer lifetime in seconds.
+expire-after-seconds: 180
+
+
+# Sync inventory, armor and extra slots.
+inventory:
+  enabled: true
+
+
+# Sync ender chest.
+enderchest:
+  enabled: true
+
+# Sync hotbar slots.
+hotbar:
+  enabled: true
+
+
+# Servers only sync with matching keys.
+keys:
+  - "YOUR-NETWORK-SYNC-KEY"

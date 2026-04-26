@@ -1,10 +1,22 @@
+# Spawn system settings.
+
+# Enables /spawn and join teleport.
+enabled: false
+
+
+# Teleports players to spawn on join.
+onjoin: false
+
+
 spawn:
-  on: false
-  # If true, players are teleported to this spawn when they join the server.
-  onjoin: false
+  # Target world.
   world: world
+
+  # Target coordinates.
   x: 0.5
   y: 100.0
   z: 0.5
+
+  # View direction.
   yaw: 0.0
   pitch: 0.0

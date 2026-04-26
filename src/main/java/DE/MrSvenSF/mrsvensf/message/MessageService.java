@@ -4,7 +4,6 @@ import DE.MrSvenSF.mrsvensf.config.ConfigSystem;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.minimessage.MiniMessage;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
-import org.bukkit.ChatColor;
 import org.bukkit.command.CommandSender;
 
 import java.util.ArrayList;
@@ -206,8 +205,7 @@ public final class MessageService {
         }
 
         if (configSystem.isColorsLegacyColorsEnabled()) {
-            String colored = ChatColor.translateAlternateColorCodes('&', text);
-            return LegacyComponentSerializer.legacySection().deserialize(colored);
+            return LegacyComponentSerializer.legacyAmpersand().deserialize(text);
         }
 
         return Component.text(text);

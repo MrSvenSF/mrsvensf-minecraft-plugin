@@ -1,6 +1,7 @@
 package DE.MrSvenSF.mrsvensf;
 
 import DE.MrSvenSF.mrsvensf.chat.ChatListener;
+import DE.MrSvenSF.mrsvensf.command.DynamicCommandRegistry;
 import DE.MrSvenSF.mrsvensf.command.MrSvenSFCommand;
 import DE.MrSvenSF.mrsvensf.config.ConfigSystem;
 import DE.MrSvenSF.mrsvensf.message.MessageService;
@@ -29,6 +30,8 @@ public final class MrSvenSF extends JavaPlugin {
     private SyncItemsListener syncItemsListener;
     private MessageService messageService;
     private UpdateService updateService;
+    private MrSvenSFCommand commandExecutor;
+    private DynamicCommandRegistry dynamicCommandRegistry;
 
     @Override
     public void onEnable() {
@@ -46,7 +49,7 @@ public final class MrSvenSF extends JavaPlugin {
         this.messageService = new MessageService(configSystem);
         this.chatListener = new ChatListener(this, configSystem);
         getServer().getPluginManager().registerEvents(chatListener, this);
-        this.spawnService = new SpawnService(configSystem);
+        this.spawnService = new SpawnService(this, configSystem);
         this.spawnListener = new SpawnListener(this, spawnService);
         getServer().getPluginManager().registerEvents(spawnListener, this);
         this.syncItemsService = new SyncItemsService(this, configSystem);
@@ -58,11 +61,7 @@ public final class MrSvenSF extends JavaPlugin {
 
         registerCommands();
 
-        if (configSystem.isChatEnabled()) {
-            getLogger().info("Chat-System geladen mit: " + configSystem.getChatConfigFile().getPath());
-        } else {
-            getLogger().info("Chat-System ist in MainConfig.yml deaktiviert.");
-        }
+        getLogger().info("Chat-System geladen mit: " + configSystem.getChatConfigFile().getPath());
     }
 
     @Override
@@ -73,6 +72,9 @@ public final class MrSvenSF extends JavaPlugin {
         if (syncItemsService != null) {
             syncItemsService.persistOnlinePlayersNow();
             syncItemsService.stop();
+        }
+        if (dynamicCommandRegistry != null) {
+            dynamicCommandRegistry.unregisterAll();
         }
     }
 
@@ -88,6 +90,9 @@ public final class MrSvenSF extends JavaPlugin {
             if (updateService != null) {
                 updateService.restartAutoUpdater();
             }
+            if (dynamicCommandRegistry != null) {
+                dynamicCommandRegistry.refresh();
+            }
             return true;
         } catch (Exception exception) {
             getLogger().severe("Reload fehlgeschlagen: " + exception.getMessage());
@@ -96,18 +101,21 @@ public final class MrSvenSF extends JavaPlugin {
     }
 
     private void registerCommands() {
+        this.commandExecutor = new MrSvenSFCommand(this, messageService, updateService, spawnService);
+
         PluginCommand adminCommand = getCommand("mrsvensf");
         PluginCommand spawnCommand = getCommand("spawn");
-        if (adminCommand == null || spawnCommand == null) {
-            getLogger().severe("Commands konnten nicht registriert werden.");
-            return;
+        if (adminCommand != null) {
+            adminCommand.setExecutor(commandExecutor);
+            adminCommand.setTabCompleter(commandExecutor);
+        }
+        if (spawnCommand != null) {
+            spawnCommand.setExecutor(commandExecutor);
+            spawnCommand.setTabCompleter(commandExecutor);
         }
 
-        MrSvenSFCommand executor = new MrSvenSFCommand(this, messageService, updateService, spawnService);
-        adminCommand.setExecutor(executor);
-        adminCommand.setTabCompleter(executor);
-        spawnCommand.setExecutor(executor);
-        spawnCommand.setTabCompleter(executor);
+        this.dynamicCommandRegistry = new DynamicCommandRegistry(this, configSystem, commandExecutor, commandExecutor);
+        this.dynamicCommandRegistry.refresh();
     }
 
     public ConfigSystem getConfigSystem() {

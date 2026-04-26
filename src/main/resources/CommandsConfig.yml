@@ -1,23 +1,34 @@
+# Command names, actions and permissions.
+# You can rename commands, but action must stay valid.
 
 moderation:
+  # Reloads all plugin configs.
   reload:
     action: "reload"
     command: "/mrsvensf reload"
     permission: "mrsvensf.admin.reload"
+
+  # Shows current and latest plugin version.
   version:
     action: "version"
     command: "/mrsvensf version"
     permission: "mrsvensf.admin.version"
+
+  # Downloads the latest release if available.
   update:
     action: "update"
     command: "/mrsvensf update"
     permission: "mrsvensf.admin.update"
+
+  # Saves your current location as spawn.
   setspawn:
     action: "setspawn"
     command: "/mrsvensf setspawn"
     permission: "mrsvensf.admin.setspawn"
 
+
 player:
+  # Teleports players to spawn.
   spawn:
     action: "spawn"
     command: "/spawn"

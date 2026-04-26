@@ -1,41 +1,44 @@
+# Global plugin settings.
+
 colors:
+  # Primary message style. Use {message}. Examples: <gradient:#fa3cda:#ffffff>{message}</gradient> or <#fa3cda>{message}</#ffffff>.
   Prime-Colors-One: "<#fa3cda>{message}</#ffffff>"
+
+  # Secondary message style. Same color formats as above.
   Prime-Colors-Two: "<#ffffff>{message}</#1cd9eb>"
+
   features:
+    # Enables MiniMessage tags and hex colors.
     mini-message: true
+
+    # Enables legacy & color codes.
     legacy-colors: true
 
-config:
-  Chat:
-    on: true
-    path: "Chat/ChatMessageConfig.yml"
-    features:
-      mini-message: true
-      legacy-colors: true
-
-  Spawn:
-    on: true
-    path: "Spawn/SpawnConfig.yml"
-
-  PluginMessages:
-    path: "Chat/PLMessage.yml"
-
-  Commands:
-    path: "CommandsConfig.yml"
-
-  SyncItems:
-    on: true
-    path: "SyncItem/SyncItem.yml"
 
 update:
-  on: true
-  version: "v0.2"
+  # Enables version checks and update downloads.
+  enabled: true
+
+  # Checks for updates once per day.
   auto-update: false
 
+
+# Database settings for DB-based systems like Sync Items.
 DB:
-  on: false
-  type: mysql # mysql / mariadb
+  # Enables database systems.
+  enabled: false
+
+  # Supported: mysql, mariadb.
+  type: mysql
+
+  # Host/domain with port.
   address: "127.0.0.1:3306"
+
+  # DB name.
   database: "mrsvensf"
+
+  # DB user.
   username: "root"
+
+  # DB password.
   password: ""

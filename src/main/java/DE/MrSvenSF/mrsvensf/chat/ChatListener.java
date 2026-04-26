@@ -4,17 +4,21 @@ import DE.MrSvenSF.mrsvensf.config.ConfigSystem;
 import io.papermc.paper.event.player.AsyncChatEvent;
 import me.clip.placeholderapi.PlaceholderAPI;
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.minimessage.MiniMessage;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import net.luckperms.api.LuckPermsProvider;
 import net.luckperms.api.cacheddata.CachedMetaData;
+import net.luckperms.api.model.group.Group;
 import net.luckperms.api.model.user.User;
+import net.luckperms.api.node.NodeType;
+import net.luckperms.api.node.types.InheritanceNode;
 import net.luckperms.api.query.QueryOptions;
 import org.bukkit.Bukkit;
-import org.bukkit.ChatColor;
 import org.bukkit.GameRule;
 import org.bukkit.NamespacedKey;
+import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -28,6 +32,11 @@ import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scoreboard.Scoreboard;
 import org.bukkit.scoreboard.Team;
 
+import java.util.List;
+import java.util.LinkedHashSet;
+import java.util.Locale;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -35,12 +44,15 @@ public final class ChatListener implements Listener {
 
     private static final Pattern HEX_WRAPPED_RANGE =
             Pattern.compile("<#([A-Fa-f0-9]{6})>(.*?)</#([A-Fa-f0-9]{6})>", Pattern.DOTALL);
+    private static final Pattern SIMPLE_HEX_COLOR =
+            Pattern.compile("(?i)(?<![\\w<:/])#([A-F0-9]{6})(?![A-F0-9])");
     private static final MiniMessage MINI_MESSAGE = MiniMessage.miniMessage();
 
     private final JavaPlugin plugin;
     private final ConfigSystem configSystem;
     private final boolean placeholderApiEnabled;
     private final boolean luckPermsEnabled;
+    private final Set<String> warnedInvalidGroups = ConcurrentHashMap.newKeySet();
 
     public ChatListener(JavaPlugin plugin, ConfigSystem configSystem) {
         this.plugin = plugin;
@@ -61,7 +73,7 @@ public final class ChatListener implements Listener {
         }
 
         FileConfiguration chatConfig = configSystem.getChatConfig();
-        if (!chatConfig.getBoolean("Join-and-Leave-Messages.on", true)) {
+        if (!getToggle(chatConfig, "Join-and-Leave-Messages", true)) {
             return;
         }
 
@@ -83,7 +95,7 @@ public final class ChatListener implements Listener {
         }
 
         FileConfiguration chatConfig = configSystem.getChatConfig();
-        if (!chatConfig.getBoolean("Join-and-Leave-Messages.on", true)) {
+        if (!getToggle(chatConfig, "Join-and-Leave-Messages", true)) {
             return;
         }
 
@@ -117,10 +129,6 @@ public final class ChatListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGH)
     public void onDeath(PlayerDeathEvent event) {
-        if (!configSystem.isChatEnabled()) {
-            return;
-        }
-
         FileConfiguration chatConfig = configSystem.getChatConfig();
         Player player = event.getEntity();
         String vanillaDeathText = event.deathMessage() == null
@@ -128,15 +136,15 @@ public final class ChatListener implements Listener {
                 : PlainTextComponentSerializer.plainText().serialize(event.deathMessage());
 
         boolean showDefaultDeathMessage = readDeathDefaultToggle(chatConfig);
-        boolean customOn = chatConfig.getBoolean("death messages.custom-messages.on", false);
+        boolean customEnabled = getToggle(chatConfig, "death messages.custom-messages", false);
 
-        if (!showDefaultDeathMessage && !customOn) {
+        if (!showDefaultDeathMessage && !customEnabled) {
             event.deathMessage(null);
             sendConsoleOnly(vanillaDeathText);
             return;
         }
 
-        if (customOn) {
+        if (customEnabled) {
             String format = chatConfig.getString("death messages.custom-messages.Format", "");
             if (!format.isBlank()) {
                 String deathText = "";
@@ -163,22 +171,18 @@ public final class ChatListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGH)
     public void onAdvancement(PlayerAdvancementDoneEvent event) {
-        if (!configSystem.isChatEnabled()) {
-            return;
-        }
-
         FileConfiguration chatConfig = configSystem.getChatConfig();
         boolean showVanillaAdvancement = readAdvancementDefaultToggle(chatConfig);
-        boolean customOn = chatConfig.getBoolean("advancements.custom-messages.on", false);
+        boolean customEnabled = getToggle(chatConfig, "advancements.custom-messages", false);
 
-        if (!showVanillaAdvancement && !customOn) {
+        if (!showVanillaAdvancement && !customEnabled) {
             setAnnounceAdvancements(false);
             String advancementName = resolveAdvancementName(event.getAdvancement().getKey());
             sendConsoleOnly(event.getPlayer().getName() + " got the advancement " + advancementName);
             return;
         }
 
-        if (customOn) {
+        if (customEnabled) {
             syncAdvancementGameRule();
             String format = chatConfig.getString("advancements.custom-messages.Format", "");
             if (!format.isBlank()) {
@@ -220,7 +224,7 @@ public final class ChatListener implements Listener {
     }
 
     private String resolveJoinMessage(FileConfiguration chatConfig, Player player) {
-        if (!player.hasPlayedBefore() && chatConfig.getBoolean("Join-and-Leave-Messages.first join message.on", false)) {
+        if (!player.hasPlayedBefore() && getToggle(chatConfig, "Join-and-Leave-Messages.first join message", false)) {
             String firstJoin = chatConfig.getString("Join-and-Leave-Messages.first join message.Message");
             if (firstJoin != null && !firstJoin.isBlank()) {
                 return firstJoin;
@@ -231,13 +235,18 @@ public final class ChatListener implements Listener {
     }
 
     private boolean isCustomChatEnabled(FileConfiguration chatConfig) {
-        boolean topLevel = chatConfig.getBoolean("Chat-Messages.on", true);
-        boolean defaultOn = isDefaultChatFormatEnabled(chatConfig);
+        boolean topLevel = getToggle(chatConfig, "Chat-Messages", true);
+        boolean defaultEnabled = isDefaultChatFormatEnabled(chatConfig);
         boolean hasDefaultFormat = hasDefaultChatFormat(chatConfig);
-        return topLevel && defaultOn && hasDefaultFormat;
+        return topLevel && defaultEnabled && hasDefaultFormat;
     }
 
     private String resolveChatFormat(FileConfiguration chatConfig, Player player) {
+        String groupFormat = resolveGroupChatFormat(chatConfig, player);
+        if (groupFormat != null && !groupFormat.isBlank()) {
+            return groupFormat;
+        }
+
         if (isDefaultChatFormatEnabled(chatConfig)) {
             String defaultFormat = resolveDefaultChatFormat(chatConfig);
             if (defaultFormat != null && !defaultFormat.isBlank()) {
@@ -248,16 +257,83 @@ public final class ChatListener implements Listener {
         return null;
     }
 
+    private String resolveGroupChatFormat(FileConfiguration chatConfig, Player player) {
+        if (!getToggle(chatConfig, "Chat-Messages.groups", false)) {
+            return null;
+        }
+
+        if (!luckPermsEnabled) {
+            warnInvalidGroupOnce("__luckperms_missing", "LuckPerms is required for Chat-Messages.groups but is not enabled.");
+            return null;
+        }
+
+        ConfigurationSection groupsSection = chatConfig.getConfigurationSection("Chat-Messages.groups");
+        if (groupsSection == null) {
+            return null;
+        }
+
+        List<String> playerGroups = getPlayerLuckPermsGroups(player);
+        for (String playerGroup : playerGroups) {
+            ConfigurationSection groupSection = getGroupSection(groupsSection, playerGroup);
+            if (groupSection == null) {
+                continue;
+            }
+
+            String format = groupSection.getString("Format", "");
+            if (!format.isBlank()) {
+                return format;
+            }
+        }
+
+        for (String configuredGroup : groupsSection.getKeys(false)) {
+            if (configuredGroup.equalsIgnoreCase("enabled")) {
+                continue;
+            }
+
+            ConfigurationSection groupSection = groupsSection.getConfigurationSection(configuredGroup);
+            if (groupSection == null) {
+                continue;
+            }
+
+            String normalizedGroup = normalizeGroupName(configuredGroup);
+            if (!luckPermsGroupExists(normalizedGroup)) {
+                warnInvalidGroupOnce(
+                        normalizedGroup,
+                        "LuckPerms group configured in ChatMessageConfig.yml does not exist: " + configuredGroup
+                );
+            }
+        }
+
+        return null;
+    }
+
+    private ConfigurationSection getGroupSection(ConfigurationSection groupsSection, String groupName) {
+        if (groupsSection == null || groupName == null || groupName.isBlank()) {
+            return null;
+        }
+
+        for (String configuredGroup : groupsSection.getKeys(false)) {
+            if (configuredGroup.equalsIgnoreCase("enabled")) {
+                continue;
+            }
+            if (!configuredGroup.equalsIgnoreCase(groupName)) {
+                continue;
+            }
+            return groupsSection.getConfigurationSection(configuredGroup);
+        }
+        return null;
+    }
+
     private boolean hasDefaultChatFormat(FileConfiguration chatConfig) {
         String format = resolveDefaultChatFormat(chatConfig);
         return format != null && !format.isBlank();
     }
 
     private boolean isDefaultChatFormatEnabled(FileConfiguration chatConfig) {
-        if (chatConfig.contains("Chat-Messages.default.on")) {
-            return chatConfig.getBoolean("Chat-Messages.default.on");
+        if (chatConfig.contains("Chat-Messages.default.enabled")) {
+            return chatConfig.getBoolean("Chat-Messages.default.enabled");
         }
-        return chatConfig.getBoolean("Chat-Messages.on", true);
+        return getToggle(chatConfig, "Chat-Messages", true);
     }
 
     private String resolveDefaultChatFormat(FileConfiguration chatConfig) {
@@ -295,6 +371,60 @@ public final class ChatListener implements Listener {
         return group == null ? "" : group;
     }
 
+    private List<String> getPlayerLuckPermsGroups(Player player) {
+        User user = getLuckPermsUser(player);
+        if (user == null) {
+            return List.of();
+        }
+
+        LinkedHashSet<String> groups = new LinkedHashSet<>();
+        String primaryGroup = user.getPrimaryGroup();
+        if (primaryGroup != null && !primaryGroup.isBlank()) {
+            groups.add(normalizeGroupName(primaryGroup));
+        }
+
+        QueryOptions queryOptions = getQueryOptions(player);
+        if (queryOptions != null) {
+            for (Group group : user.getInheritedGroups(queryOptions)) {
+                if (group != null && group.getName() != null && !group.getName().isBlank()) {
+                    groups.add(normalizeGroupName(group.getName()));
+                }
+            }
+        }
+
+        for (InheritanceNode node : user.getNodes(NodeType.INHERITANCE)) {
+            if (node != null && node.getGroupName() != null && !node.getGroupName().isBlank()) {
+                groups.add(normalizeGroupName(node.getGroupName()));
+            }
+        }
+
+        return List.copyOf(groups);
+    }
+
+    private boolean luckPermsGroupExists(String groupName) {
+        if (!luckPermsEnabled || groupName == null || groupName.isBlank()) {
+            return false;
+        }
+
+        try {
+            return LuckPermsProvider.get().getGroupManager().getGroup(groupName) != null;
+        } catch (IllegalStateException ignored) {
+            return false;
+        }
+    }
+
+    private String normalizeGroupName(String groupName) {
+        return groupName == null ? "" : groupName.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private void warnInvalidGroupOnce(String key, String message) {
+        String normalizedKey = key == null || key.isBlank() ? message : key.trim().toLowerCase(Locale.ROOT);
+        if (!warnedInvalidGroups.add(normalizedKey)) {
+            return;
+        }
+        Bukkit.getConsoleSender().sendMessage(Component.text("[MrSvenSF] " + message, NamedTextColor.RED));
+    }
+
     private String getPlayerPrefix(Player player) {
         String placeholderApiPrefix = getPrefixFromPlaceholderApi(player);
         if (!placeholderApiPrefix.isBlank()) {
@@ -312,11 +442,11 @@ public final class ChatListener implements Listener {
         }
 
         Team team = scoreboard.getEntryTeam(player.getName());
-        if (team == null || team.getPrefix() == null) {
+        if (team == null) {
             return "";
         }
 
-        return team.getPrefix();
+        return serializeTeamPrefix(team);
     }
 
     private String getPrefixFromPlaceholderApi(Player player) {
@@ -376,7 +506,8 @@ public final class ChatListener implements Listener {
 
     private Component toComponent(String text) {
         if (configSystem.isChatMiniMessageEnabled()) {
-            String miniMessageInput = normalizeHexRangeSyntax(text);
+            String miniMessageInput = translateSimpleHexColor(text);
+            miniMessageInput = normalizeHexRangeSyntax(miniMessageInput);
             if (configSystem.isChatLegacyColorsEnabled()) {
                 miniMessageInput = translateLegacyToMiniMessage(miniMessageInput);
             }
@@ -389,11 +520,20 @@ public final class ChatListener implements Listener {
         }
 
         if (configSystem.isChatLegacyColorsEnabled()) {
-            String colored = ChatColor.translateAlternateColorCodes('&', text);
-            return LegacyComponentSerializer.legacySection().deserialize(colored);
+            return LegacyComponentSerializer.legacyAmpersand().deserialize(text);
         }
 
         return Component.text(text);
+    }
+
+    private String translateSimpleHexColor(String input) {
+        Matcher matcher = SIMPLE_HEX_COLOR.matcher(input);
+        StringBuffer output = new StringBuffer();
+        while (matcher.find()) {
+            matcher.appendReplacement(output, Matcher.quoteReplacement("<#" + matcher.group(1) + ">"));
+        }
+        matcher.appendTail(output);
+        return output.toString();
     }
 
     private String normalizeHexRangeSyntax(String input) {
@@ -511,20 +651,65 @@ public final class ChatListener implements Listener {
     private void syncAdvancementGameRule() {
         FileConfiguration chatConfig = configSystem.getChatConfig();
         boolean showVanillaAdvancement = readAdvancementDefaultToggle(chatConfig);
-        boolean customOn = chatConfig.getBoolean("advancements.custom-messages.on", false);
-        boolean announce = showVanillaAdvancement && !customOn;
+        boolean customEnabled = getToggle(chatConfig, "advancements.custom-messages", false);
+        boolean announce = showVanillaAdvancement && !customEnabled;
         setAnnounceAdvancements(announce);
     }
 
     private void setAnnounceAdvancements(boolean value) {
-        Bukkit.getWorlds().forEach(world -> world.setGameRule(GameRule.ANNOUNCE_ADVANCEMENTS, value));
+        GameRule<Boolean> rule = getBooleanGameRule("announceAdvancements");
+        if (rule == null) {
+            return;
+        }
+        Bukkit.getWorlds().forEach(world -> world.setGameRule(rule, value));
+    }
+
+    @SuppressWarnings("unchecked")
+    private GameRule<Boolean> getBooleanGameRule(String name) {
+        GameRule<?> rule = resolveGameRuleByName(name);
+        if (rule == null || rule.getType() != Boolean.class) {
+            return null;
+        }
+        return (GameRule<Boolean>) rule;
+    }
+
+    private GameRule<?> resolveGameRuleByName(String name) {
+        try {
+            java.lang.reflect.Method method = GameRule.class.getMethod("getByName", String.class);
+            Object result = method.invoke(null, name);
+            return result instanceof GameRule<?> rule ? rule : null;
+        } catch (Exception exception) {
+            return null;
+        }
     }
 
     private void sendConsoleOnly(String message) {
         if (message == null || message.isBlank()) {
             return;
         }
-        Bukkit.getConsoleSender().sendMessage(ChatColor.GRAY + "[MrSvenSF] " + ChatColor.RESET + message);
+        Bukkit.getConsoleSender().sendMessage(
+                Component.text("[MrSvenSF] ", NamedTextColor.GRAY).append(Component.text(message))
+        );
+    }
+
+    private String serializeTeamPrefix(Team team) {
+        try {
+            java.lang.reflect.Method componentPrefixMethod = Team.class.getMethod("prefix");
+            Object result = componentPrefixMethod.invoke(team);
+            if (result instanceof Component component) {
+                return LegacyComponentSerializer.legacySection().serialize(component);
+            }
+        } catch (Exception ignored) {
+            // Older Bukkit API fallback below.
+        }
+
+        try {
+            java.lang.reflect.Method legacyPrefixMethod = Team.class.getMethod("getPrefix");
+            Object result = legacyPrefixMethod.invoke(team);
+            return result instanceof String prefix ? prefix : "";
+        } catch (Exception ignored) {
+            return "";
+        }
     }
 
     private boolean readDeathDefaultToggle(FileConfiguration chatConfig) {
@@ -546,6 +731,14 @@ public final class ChatListener implements Listener {
                 "advancements.advancement-messages",
                 "advancements.Advancement-Messages",
                 "advancements.advancementMessages"
+        );
+    }
+
+    private boolean getToggle(FileConfiguration chatConfig, String basePath, boolean defaultValue) {
+        return getBooleanFromAnyPath(
+                chatConfig,
+                defaultValue,
+                basePath + ".enabled"
         );
     }
 

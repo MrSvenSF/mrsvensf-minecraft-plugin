@@ -1,32 +1,63 @@
+# Chat, join/leave, death and advancement messages.
+
+# Enables the chat system.
+enabled: true
+
+
 Join-and-Leave-Messages:
-  on: true
+  # Enables custom join and leave messages.
+  enabled: true
+
   Join:
+    # Text supports & colors, MiniMessage/hex and placeholders: {prefix}, {group}, {player}
     Message: "&8[&a+&8]&r{prefix} &7{player} "
+
   Leave:
+    # Text supports & colors, MiniMessage/hex and placeholders: {prefix}, {group}, {player}
     Message: "&8[&c-&8]&r{prefix} &7{player} "
 
   first join message:
-    on: true
+    # Uses this message on first join.
+    enabled: true
+    # Text supports colors and placeholders: {prefix}, {group}, {player}
     Message: "&8[&a+&8]{prefix} {player} &7has joined the server for the first time!"
 
-Chat-Messages:
-  on: true
-  Format: "{prefix} &7{player} &8››&r &7{message}"
 
-# dieser Part ist derzeitlich in der Arbeit
-#  groups:
-#    on: true
-#    inhaber:
-#      Format: "{prefix} {player} &8››&r <gradient:#f235e6:#87d3ff>{message}</gradient>"
+Chat-Messages:
+  # Enables custom chat format.
+  enabled: true
+  # Text supports & colors, MiniMessage/hex and placeholders: {prefix}, {group}, {player}, {message}
+  Format: "&8[&7#&8]{prefix} &7{player} &8››&r &7{message}"
+
+  # Optional LuckPerms group formats.
+  # Each key is a LuckPerms group name, for example "inhaber" or "admin".
+  # Players without a matching group use the default Format above.
+  # Add more groups by copying a section and changing the group key + Format.
+  groups:
+    enabled: true
+    inhaber:
+      Format: "&8[&7#&8]{prefix} &7{player} &8››&r <gradient:#f235e6:#87d3ff>{message}</gradient>"
+    admin:
+      Format: "&8[&7#&8]{prefix} &7{player} &8››&r <#ff5555>{message}</#ffaa00>"
+
 
 death messages:
+  # Shows vanilla death messages to players.
   death-message: false
+
   custom-messages:
-    on: false
+    # Uses the custom death format below.
+    enabled: false
+    # Text supports colors and placeholders: {prefix}, {group}, {player}, {death}
     Format: "{prefix} {player} died from {death}"
 
+
 advancements:
+  # Shows vanilla advancement messages to players.
   advancement-message: false
+
   custom-messages:
-    on: false
+    # Broadcasts the custom advancement format below.
+    enabled: false
+    # Text supports colors and placeholders: {prefix}, {group}, {player}, {advancement}
     Format: "{prefix} {player} got the advancement {advancement}"

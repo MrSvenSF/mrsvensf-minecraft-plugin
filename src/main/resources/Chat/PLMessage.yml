@@ -1,19 +1,29 @@
+# Plugin command messages.
+# Use {Prime-Colors-One}text{/Prime-Colors-One} or {Prime-Colors-Two}text{/Prime-Colors-Two}.
+# MiniMessage, hex colors and & colors are supported.
+
+# Missing permission.
 no-permission:
   - "{Prime-Colors-One}This command can only be used with higher permission.{/Prime-Colors-One}"
 
+# Command unavailable.
 command-disabled:
   - "{Prime-Colors-One}this command is currently disabled.{/Prime-Colors-One}"
 
+# Console used a player-only command.
 player-only:
-  - "{Prime-Colors-One}This command can only be used by a player with higher permission.{/Prime-Colors-One}"
+  - "{Prime-Colors-One}This command can only be used by an in-game player.{/Prime-Colors-One}"
 
+# Reload success.
 reload:
   - "{Prime-Colors-One}MrSvenSF{/Prime-Colors-One} {Prime-Colors-Two}plugin reloaded{/Prime-Colors-Two}"
   - "{Prime-Colors-Two}----------------------{/Prime-Colors-Two}"
 
+# Reload failed.
 reload-failed:
   - "{Prime-Colors-One}reload failed. check console.{/Prime-Colors-One}"
 
+# Version command. Placeholders: {version}, {latest}
 version:
   - "{Prime-Colors-One}looking for updates...{/Prime-Colors-One}"
   - "{Prime-Colors-Two}----------------------{/Prime-Colors-Two}"
@@ -21,6 +31,7 @@ version:
   - "{Prime-Colors-One}latest version{/Prime-Colors-One}&8: {Prime-Colors-Two}{latest}{/Prime-Colors-Two}"
   - "{Prime-Colors-One}if you want to update, use{/Prime-Colors-One} {Prime-Colors-Two}/mrsvensf update{/Prime-Colors-Two}"
 
+# Update success. Placeholders: {version}, {latest}, {path}
 update:
   - "{Prime-Colors-One}looking for updates...{/Prime-Colors-One}"
   - "{Prime-Colors-Two}----------------------{/Prime-Colors-Two}"
@@ -28,25 +39,32 @@ update:
   - "{Prime-Colors-One}latest version{/Prime-Colors-One}&8: {Prime-Colors-Two}{latest}{/Prime-Colors-Two}"
   - "{Prime-Colors-One}downloading update...{/Prime-Colors-One}"
   - "{Prime-Colors-One}plugin file replaced in plugins folder.{/Prime-Colors-One}"
+  - "{Prime-Colors-One}restart the server to load the new version.{/Prime-Colors-One}"
 
+# No update available.
 update-no-change:
   - "{Prime-Colors-One}you already use the latest version.{/Prime-Colors-One}"
   - "{Prime-Colors-One}version{/Prime-Colors-One}&8: {Prime-Colors-Two}{version}{/Prime-Colors-Two}"
 
+# Update failed. Placeholder: {error}
 update-error:
   - "{Prime-Colors-One}update check failed.{/Prime-Colors-One}"
   - "{Prime-Colors-One}reason{/Prime-Colors-One}&8: {Prime-Colors-Two}{error}{/Prime-Colors-Two}"
 
+# Spawn saved. Placeholders: {world}, {x}, {y}, {z}
 spawn-set:
   - "{Prime-Colors-One}spawn was saved.{/Prime-Colors-One}"
   - "{Prime-Colors-One}world{/Prime-Colors-One}&8: {Prime-Colors-Two}{world}{/Prime-Colors-Two}"
   - "{Prime-Colors-One}pos{/Prime-Colors-One}&8: {Prime-Colors-Two}{x} {y} {z}{/Prime-Colors-Two}"
 
+# Spawn teleport success.
 spawn-teleported:
   - "{Prime-Colors-One}teleported to spawn.{/Prime-Colors-One}"
 
+# Spawn missing or invalid.
 spawn-not-set:
   - "{Prime-Colors-One}spawn is not configured correctly in SpawnConfig.yml.{/Prime-Colors-One}"
 
+# Spawn disabled.
 spawn-disabled:
-  - "{Prime-Colors-One}spawn system is disabled in MainConfig.yml or SpawnConfig.yml.{/Prime-Colors-One}"
+  - "{Prime-Colors-One}spawn system is disabled in SpawnConfig.yml.{/Prime-Colors-One}"

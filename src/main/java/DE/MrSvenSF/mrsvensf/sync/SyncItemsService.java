@@ -481,7 +481,18 @@ public final class SyncItemsService {
     }
 
     private Connection openConnection() throws Exception {
-        Class.forName("com.mysql.cj.jdbc.Driver");
+        String type = configSystem.getSyncDatabaseType();
+        String jdbcProtocol = "mysql";
+        if ("mariadb".equalsIgnoreCase(type)) {
+            try {
+                Class.forName("org.mariadb.jdbc.Driver");
+                jdbcProtocol = "mariadb";
+            } catch (ClassNotFoundException exception) {
+                Class.forName("com.mysql.cj.jdbc.Driver");
+            }
+        } else {
+            Class.forName("com.mysql.cj.jdbc.Driver");
+        }
 
         String host = configSystem.getSyncDatabaseHost();
         int port = configSystem.getSyncDatabasePort();
@@ -489,7 +500,7 @@ public final class SyncItemsService {
         String user = configSystem.getSyncDatabaseUser();
         String password = configSystem.getSyncDatabasePassword();
 
-        String url = "jdbc:mysql://" + host + ":" + port + "/" + database
+        String url = "jdbc:" + jdbcProtocol + "://" + host + ":" + port + "/" + database
                 + "?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC&characterEncoding=utf8";
 
         return DriverManager.getConnection(url, user, password);
@@ -689,6 +700,7 @@ public final class SyncItemsService {
         }
     }
 
+    @SuppressWarnings("deprecation")
     private String serializeItems(ItemStack[] items) {
         if (items == null) {
             return "";
@@ -709,6 +721,7 @@ public final class SyncItemsService {
         }
     }
 
+    @SuppressWarnings("deprecation")
     private ItemStack[] deserializeItems(String base64) {
         if (base64 == null || base64.isBlank()) {
             return null;

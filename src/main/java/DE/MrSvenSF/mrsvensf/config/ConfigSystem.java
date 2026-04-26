@@ -79,7 +79,6 @@ public final class ConfigSystem {
 
     private boolean updateEnabled;
     private boolean autoUpdateEnabled;
-    private String configuredVersion;
     private boolean syncItemsEnabled;
     private boolean syncItemsMainEnabled;
     private boolean syncInventoryEnabled;
@@ -87,6 +86,7 @@ public final class ConfigSystem {
     private boolean syncHotbarEnabled;
     private boolean databaseEnabled;
     private boolean syncRemoteDatabaseEnabled;
+    private String syncDatabaseType;
     private String syncDatabaseHost;
     private int syncDatabasePort;
     private String syncDatabaseName;
@@ -124,6 +124,7 @@ public final class ConfigSystem {
 
     public boolean isChatEnabled() {
         refreshMainConfigIfChanged();
+        refreshChatConfigIfChanged();
         return chatEnabled;
     }
 
@@ -150,6 +151,7 @@ public final class ConfigSystem {
 
     public boolean isSpawnEnabled() {
         refreshMainConfigIfChanged();
+        refreshSpawnConfigIfChanged();
         return spawnEnabled;
     }
 
@@ -195,6 +197,22 @@ public final class ConfigSystem {
         refreshMainConfigIfChanged();
         refreshCommandsConfigIfChanged();
         return configuredPlayerCommands;
+    }
+
+    public List<String> getConfiguredModerationRootCommands() {
+        return getConfiguredRootCommands("moderation");
+    }
+
+    public List<String> getConfiguredPlayerRootCommands() {
+        return getConfiguredRootCommands("player");
+    }
+
+    public boolean isModerationRootCommand(String commandName) {
+        return containsIgnoreCase(getConfiguredModerationRootCommands(), commandName);
+    }
+
+    public boolean isPlayerRootCommand(String commandName) {
+        return containsIgnoreCase(getConfiguredPlayerRootCommands(), commandName);
     }
 
     public List<CommandDefinition> getEnabledCommandDefinitions(String section) {
@@ -280,6 +298,10 @@ public final class ConfigSystem {
     }
 
     public CommandDefinition resolveModerationCommand(String input) {
+        return resolveModerationCommand(null, input);
+    }
+
+    public CommandDefinition resolveModerationCommand(String rootCommand, String input) {
         refreshMainConfigIfChanged();
         refreshCommandsConfigIfChanged();
 
@@ -288,7 +310,13 @@ public final class ConfigSystem {
         }
 
         String normalizedInput = input.trim().toLowerCase(Locale.ROOT);
+        String normalizedRoot = rootCommand == null ? "" : rootCommand.trim().toLowerCase(Locale.ROOT);
         for (CommandDefinition definition : getEnabledCommandDefinitions("moderation")) {
+            String configuredRoot = parsePrimaryCommand(definition.command());
+            if (!normalizedRoot.isBlank() && !configuredRoot.equalsIgnoreCase(normalizedRoot)) {
+                continue;
+            }
+
             if (definition.key().equalsIgnoreCase(normalizedInput)) {
                 return definition;
             }
@@ -323,11 +351,13 @@ public final class ConfigSystem {
             }
         }
 
-        if (definitions.size() == 1) {
-            return definitions.get(0);
-        }
-
         return null;
+    }
+
+    public String getPrimaryCommandName(String fullCommand) {
+        refreshMainConfigIfChanged();
+        refreshCommandsConfigIfChanged();
+        return parsePrimaryCommand(fullCommand);
     }
 
     public String getCommandString(String section, String key, String defaultCommand) {
@@ -362,7 +392,7 @@ public final class ConfigSystem {
 
     public String getConfiguredVersion() {
         refreshMainConfigIfChanged();
-        return configuredVersion;
+        return plugin.getPluginMeta().getVersion();
     }
 
     public boolean isSyncItemsEnabled() {
@@ -406,6 +436,12 @@ public final class ConfigSystem {
         return syncDatabaseHost;
     }
 
+    public String getSyncDatabaseType() {
+        refreshMainConfigIfChanged();
+        refreshSyncItemsConfigIfChanged();
+        return syncDatabaseType;
+    }
+
     public int getSyncDatabasePort() {
         refreshMainConfigIfChanged();
         refreshSyncItemsConfigIfChanged();
@@ -442,14 +478,6 @@ public final class ConfigSystem {
         return syncKeys;
     }
 
-    public String getSyncKey() {
-        List<String> keys = getSyncKeys();
-        if (keys.isEmpty()) {
-            return "";
-        }
-        return keys.get(0);
-    }
-
     public int getSyncExpireAfterSeconds() {
         refreshMainConfigIfChanged();
         refreshSyncItemsConfigIfChanged();
@@ -464,20 +492,6 @@ public final class ConfigSystem {
             return legacyFolder;
         }
         return preferredFolder;
-    }
-
-    public void setConfiguredVersion(String version) {
-        refreshMainConfigIfChanged();
-        if (mainConfig == null) {
-            return;
-        }
-
-        String safeVersion = version == null ? "" : version.trim();
-        mainConfig.set("update.version", safeVersion);
-        saveMainConfig();
-
-        this.configuredVersion = safeVersion;
-        this.mainConfigLastModified = mainConfigFile.exists() ? mainConfigFile.lastModified() : this.mainConfigLastModified;
     }
 
     public void saveSpawnConfig() {
@@ -522,34 +536,20 @@ public final class ConfigSystem {
             this.primeColorTwo = "{message}";
         }
 
-        this.updateEnabled = config.getBoolean("update.on", true);
-        this.autoUpdateEnabled = config.getBoolean("update.auto-update", false);
-        this.configuredVersion = config.getString("update.version", plugin.getPluginMeta().getVersion());
-        if (configuredVersion == null || configuredVersion.isBlank()) {
-            this.configuredVersion = plugin.getPluginMeta().getVersion();
-        }
-
-        this.chatEnabled = config.getBoolean("config.Chat.on", true);
-        this.chatMiniMessageEnabled = config.getBoolean("config.Chat.features.mini-message", true);
-        this.chatLegacyColorsEnabled = config.getBoolean("config.Chat.features.legacy-colors", true);
-        this.spawnEnabled = config.getBoolean("config.Spawn.on", true);
-        this.syncItemsMainEnabled = getBooleanAnyPath(
+        this.updateEnabled = getBooleanAnyPath(
                 config,
                 true,
-                "config.SyncItems.on",
-                "config.Sync-Items.on",
-                "config.Sync Items.on",
-                "sync-items.on",
-                "Sync-Items.on",
-                "Sync Items.on",
-                "sync.items.on"
+                "update.enabled"
         );
+        this.autoUpdateEnabled = config.getBoolean("update.auto-update", false);
+        this.chatEnabled = true;
+        this.chatMiniMessageEnabled = colorsMiniMessageEnabled;
+        this.chatLegacyColorsEnabled = colorsLegacyColorsEnabled;
+        this.spawnEnabled = true;
         readDatabaseSettings(config);
+        this.syncItemsMainEnabled = databaseEnabled;
 
-        String chatPath = config.getString("config.Chat.path", DEFAULT_CHAT_PATH);
-        if (chatPath == null || chatPath.isBlank()) {
-            chatPath = DEFAULT_CHAT_PATH;
-        }
+        String chatPath = DEFAULT_CHAT_PATH;
         boolean chatPathChanged = firstLoad || configuredChatPath == null || !configuredChatPath.equals(chatPath);
         if (chatPathChanged) {
             configuredChatPath = chatPath;
@@ -559,11 +559,14 @@ public final class ConfigSystem {
         if (chatPathChanged || chatAudit.changed()) {
             reloadChatConfig();
         }
+        this.chatEnabled = getBooleanAnyPath(
+                chatConfig == null ? new YamlConfiguration() : chatConfig,
+                true,
+                "enabled",
+                "chat.enabled"
+        );
 
-        String spawnPath = config.getString("config.Spawn.path", DEFAULT_SPAWN_PATH);
-        if (spawnPath == null || spawnPath.isBlank()) {
-            spawnPath = DEFAULT_SPAWN_PATH;
-        }
+        String spawnPath = DEFAULT_SPAWN_PATH;
         boolean spawnPathChanged = firstLoad || configuredSpawnPath == null || !configuredSpawnPath.equals(spawnPath);
         if (spawnPathChanged) {
             configuredSpawnPath = spawnPath;
@@ -573,11 +576,14 @@ public final class ConfigSystem {
         if (spawnPathChanged || spawnAudit.changed()) {
             reloadSpawnConfig();
         }
+        this.spawnEnabled = getBooleanAnyPath(
+                spawnConfig == null ? new YamlConfiguration() : spawnConfig,
+                true,
+                "enabled",
+                "spawn.enabled"
+        );
 
-        String messagePath = config.getString("config.PluginMessages.path", DEFAULT_MESSAGE_PATH);
-        if (messagePath == null || messagePath.isBlank()) {
-            messagePath = DEFAULT_MESSAGE_PATH;
-        }
+        String messagePath = DEFAULT_MESSAGE_PATH;
         boolean messagePathChanged = firstLoad || configuredMessagePath == null || !configuredMessagePath.equals(messagePath);
         if (messagePathChanged) {
             configuredMessagePath = messagePath;
@@ -588,10 +594,7 @@ public final class ConfigSystem {
             reloadMessageConfig();
         }
 
-        String commandsPath = config.getString("config.Commands.path", DEFAULT_COMMANDS_PATH);
-        if (commandsPath == null || commandsPath.isBlank()) {
-            commandsPath = DEFAULT_COMMANDS_PATH;
-        }
+        String commandsPath = DEFAULT_COMMANDS_PATH;
         boolean commandsPathChanged = firstLoad || configuredCommandsPath == null || !configuredCommandsPath.equals(commandsPath);
         if (commandsPathChanged) {
             configuredCommandsPath = commandsPath;
@@ -602,28 +605,8 @@ public final class ConfigSystem {
             reloadCommandsConfig();
         }
 
-        String syncItemsPath = getStringAnyPath(
-                config,
-                DEFAULT_SYNC_ITEMS_PATH,
-                "config.SyncItems.path",
-                "config.Sync-Items.path",
-                "config.Sync Items.path",
-                "config.SyncItem.path",
-                "config.Sync.path"
-        );
-        if (syncItemsPath == null || syncItemsPath.isBlank()) {
-            syncItemsPath = DEFAULT_SYNC_ITEMS_PATH;
-        }
-        String normalizedSyncItemsPath = normalizeSyncItemsPath(syncItemsPath);
-        if (!normalizedSyncItemsPath.equals(syncItemsPath)) {
-            migrateLegacySyncItemsFile(syncItemsPath, normalizedSyncItemsPath);
-            syncItemsPath = normalizedSyncItemsPath;
-            if (mainConfig != null) {
-                mainConfig.set("config.SyncItems.path", normalizedSyncItemsPath);
-                saveMainConfig();
-                mainConfigLastModified = mainConfigFile.exists() ? mainConfigFile.lastModified() : mainConfigLastModified;
-            }
-        }
+        migrateLegacySyncItemsFile(LEGACY_SYNC_ITEMS_PATH, DEFAULT_SYNC_ITEMS_PATH);
+        String syncItemsPath = normalizeSyncItemsPath(DEFAULT_SYNC_ITEMS_PATH);
         boolean syncItemsPathChanged = firstLoad
                 || configuredSyncItemsPath == null
                 || !configuredSyncItemsPath.equals(syncItemsPath);
@@ -636,7 +619,7 @@ public final class ConfigSystem {
             reloadSyncItemsConfig();
         }
 
-        readSyncItemsSettings(config, syncItemsConfig == null ? new YamlConfiguration() : syncItemsConfig);
+        readSyncItemsSettings(syncItemsConfig == null ? new YamlConfiguration() : syncItemsConfig);
         readCommandSettings(config);
     }
 
@@ -671,12 +654,12 @@ public final class ConfigSystem {
         long currentLastModified = syncItemsConfigFile.lastModified();
         if (currentLastModified != syncItemsConfigLastModified) {
             reloadSyncItemsConfig();
-            readSyncItemsSettings(mainConfig == null ? new YamlConfiguration() : mainConfig, syncItemsConfig);
+            readSyncItemsSettings(syncItemsConfig);
         }
     }
 
     private void refreshChatConfigIfChanged() {
-        if (!chatEnabled || chatConfigFile == null || !chatConfigFile.exists()) {
+        if (chatConfigFile == null || !chatConfigFile.exists()) {
             return;
         }
 
@@ -699,6 +682,36 @@ public final class ConfigSystem {
 
     private void reloadMainConfig() {
         mainConfig = YamlConfiguration.loadConfiguration(mainConfigFile);
+        boolean changed = removeLegacyMainConfigRoutingSection(mainConfig);
+        changed = removeMainConfigVersion(mainConfig) || changed;
+        changed = normalizeEnabledKeys(
+                mainConfig,
+                "update",
+                "DB"
+        ) || changed;
+        if (changed) {
+            saveYamlConfiguration(mainConfig, mainConfigFile, "MainConfig");
+        }
+    }
+
+    private boolean removeLegacyMainConfigRoutingSection(FileConfiguration config) {
+        if (config == null) {
+            return false;
+        }
+        String legacyConfigKey = findExistingKeyIgnoreCase(config, "config");
+        if (legacyConfigKey == null) {
+            return false;
+        }
+        config.set(legacyConfigKey, null);
+        return true;
+    }
+
+    private boolean removeMainConfigVersion(FileConfiguration config) {
+        if (config == null || !config.contains("update.version")) {
+            return false;
+        }
+        config.set("update.version", null);
+        return true;
     }
 
     private void saveMainConfig() {
@@ -711,11 +724,29 @@ public final class ConfigSystem {
 
     private void reloadChatConfig() {
         chatConfig = YamlConfiguration.loadConfiguration(chatConfigFile);
+        boolean changed = normalizeEnabledKeys(
+                chatConfig,
+                "Join-and-Leave-Messages",
+                "Join-and-Leave-Messages.first join message",
+                "Chat-Messages",
+                "Chat-Messages.groups",
+                "death messages.custom-messages",
+                "advancements.custom-messages"
+        );
+        if (changed) {
+            saveYamlConfiguration(chatConfig, chatConfigFile, "Chat-Config");
+        }
+        this.chatEnabled = getBooleanAnyPath(chatConfig, true, "enabled", "chat.enabled");
         chatConfigLastModified = chatConfigFile.lastModified();
     }
 
     private void reloadSpawnConfig() {
         spawnConfig = YamlConfiguration.loadConfiguration(spawnConfigFile);
+        boolean changed = normalizeEnabledKeys(spawnConfig, "spawn");
+        if (changed) {
+            saveYamlConfiguration(spawnConfig, spawnConfigFile, "Spawn-Config");
+        }
+        this.spawnEnabled = getBooleanAnyPath(spawnConfig, true, "enabled", "spawn.enabled");
         spawnConfigLastModified = spawnConfigFile.lastModified();
     }
 
@@ -731,6 +762,16 @@ public final class ConfigSystem {
 
     private void reloadSyncItemsConfig() {
         syncItemsConfig = YamlConfiguration.loadConfiguration(syncItemsConfigFile);
+        boolean changed = normalizeEnabledKeys(
+                syncItemsConfig,
+                "SyncItems",
+                "SyncItems.inventory",
+                "SyncItems.enderchest",
+                "SyncItems.hotbar"
+        );
+        if (changed) {
+            saveYamlConfiguration(syncItemsConfig, syncItemsConfigFile, "SyncItems-Config");
+        }
         syncItemsConfigLastModified = syncItemsConfigFile.lastModified();
     }
 
@@ -763,6 +804,89 @@ public final class ConfigSystem {
             plugin.getLogger().info("SyncItems-Config wurde auf den neuen Dateinamen migriert: " + newFile.getPath());
         } catch (IOException exception) {
             plugin.getLogger().warning("SyncItems-Config konnte nicht migriert werden: " + exception.getMessage());
+        }
+    }
+
+    private boolean normalizeEnabledKeys(ConfigurationSection root, String... sectionPaths) {
+        if (root == null || sectionPaths == null || sectionPaths.length == 0) {
+            return false;
+        }
+
+        boolean changed = false;
+        for (String sectionPath : sectionPaths) {
+            if (sectionPath == null || sectionPath.isBlank()) {
+                continue;
+            }
+            if (normalizeEnabledKeyInSection(root, sectionPath)) {
+                changed = true;
+            }
+        }
+        return changed;
+    }
+
+    private boolean normalizeEnabledKeyInSection(ConfigurationSection root, String sectionPath) {
+        ConfigurationSection section = getConfigurationSectionIgnoreCase(root, sectionPath);
+        if (section == null) {
+            return false;
+        }
+
+        boolean changed = false;
+        String enabledKey = findExistingKeyIgnoreCase(section, "enabled");
+        String trueKey = findExistingKeyIgnoreCase(section, "true");
+        String falseKey = findExistingKeyIgnoreCase(section, "false");
+
+        if (enabledKey == null) {
+            if (trueKey != null) {
+                section.set("enabled", section.get(trueKey));
+                section.set(trueKey, null);
+                changed = true;
+            } else if (falseKey != null) {
+                section.set("enabled", section.get(falseKey));
+                section.set(falseKey, null);
+                changed = true;
+            }
+        } else if (!enabledKey.equals("enabled")) {
+            section.set("enabled", section.get(enabledKey));
+            section.set(enabledKey, null);
+            changed = true;
+        }
+
+        String staleTrueKey = findExistingKeyIgnoreCase(section, "true");
+        if (staleTrueKey != null) {
+            section.set(staleTrueKey, null);
+            changed = true;
+        }
+
+        String staleFalseKey = findExistingKeyIgnoreCase(section, "false");
+        if (staleFalseKey != null) {
+            section.set(staleFalseKey, null);
+            changed = true;
+        }
+
+        return changed;
+    }
+
+    private String findExistingKeyIgnoreCase(ConfigurationSection section, String targetKey) {
+        if (section == null || targetKey == null || targetKey.isBlank()) {
+            return null;
+        }
+
+        for (String existingKey : section.getKeys(false)) {
+            if (existingKey.equalsIgnoreCase(targetKey)) {
+                return existingKey;
+            }
+        }
+        return null;
+    }
+
+    private void saveYamlConfiguration(FileConfiguration configuration, File targetFile, String label) {
+        if (configuration == null || targetFile == null) {
+            return;
+        }
+        try {
+            configuration.save(targetFile);
+        } catch (IOException exception) {
+            throw new IllegalStateException(label + " konnte nicht gespeichert werden: " + targetFile.getPath(), exception);
         }
     }
 
@@ -915,23 +1039,23 @@ public final class ConfigSystem {
         if (dbSection == null) {
             dbSection = getConfigurationSectionIgnoreCase(config, "database");
         }
-        if (dbSection == null) {
-            dbSection = getConfigurationSectionIgnoreCase(config, "config.DB");
-        }
-        if (dbSection == null) {
-            dbSection = getConfigurationSectionIgnoreCase(config, "config.database");
-        }
 
-        this.databaseEnabled = getSectionBooleanIgnoreCase(dbSection, "on", getBooleanAnyPath(
+        this.databaseEnabled = getSectionBooleanIgnoreCase(dbSection, "enabled", getBooleanAnyPath(
                 config,
-                true,
-                "DB.on",
-                "DB.On",
-                "database.on",
-                "db.on",
-                "config.DB.on",
-                "config.database.on"
+                false,
+                "DB.enabled",
+                "database.enabled",
+                "db.enabled"
         ));
+
+        String rawType = getSectionStringIgnoreCase(dbSection, "type", getStringAnyPath(
+                config,
+                "mysql",
+                "DB.type",
+                "database.type",
+                "db.type"
+        ));
+        this.syncDatabaseType = normalizeDatabaseType(rawType);
 
         String address = getSectionStringIgnoreCase(dbSection, "address", getStringAnyPath(
                 config,
@@ -939,8 +1063,7 @@ public final class ConfigSystem {
                 "DB.address",
                 "DB.Address",
                 "database.address",
-                "db.address",
-                "config.DB.address"
+                "db.address"
         ));
         HostAndPort parsedAddress = parseHostAndPort(address == null ? "" : address);
         this.syncDatabaseHost = parsedAddress.host().isBlank() ? "127.0.0.1" : parsedAddress.host();
@@ -979,81 +1102,63 @@ public final class ConfigSystem {
         this.syncRemoteDatabaseEnabled = databaseEnabled;
     }
 
-    private void readSyncItemsSettings(FileConfiguration mainConfigData, FileConfiguration syncData) {
-        boolean fallbackSyncOn = getBooleanAnyPath(
-                mainConfigData,
-                syncItemsMainEnabled,
-                "config.SyncItems.on",
-                "config.Sync-Items.on",
-                "config.Sync Items.on"
-        );
-        boolean fallbackInventoryOn = getBooleanAnyPath(
-                mainConfigData,
-                true,
-                "config.SyncItems.inventory.on",
-                "sync-items.inventory",
-                "sync-items.inventory.on"
-        );
-        boolean fallbackEnderChestOn = getBooleanAnyPath(
-                mainConfigData,
-                true,
-                "config.SyncItems.enderchest.on",
-                "sync-items.enderchest",
-                "sync-items.enderchest.on"
-        );
-        boolean fallbackHotbarOn = getBooleanAnyPath(
-                mainConfigData,
-                true,
-                "config.SyncItems.hotbar.on",
-                "sync-items.hotbar",
-                "sync-items.hotbar.on"
-        );
-        int fallbackExpireSeconds = getIntAnyPath(
-                mainConfigData,
-                180,
-                "config.SyncItems.expire-after-seconds",
-                "sync-items.expire-after-seconds",
-                "sync-items.delete-after-seconds"
-        );
+    private String normalizeDatabaseType(String value) {
+        if (value == null || value.isBlank()) {
+            return "mysql";
+        }
 
+        String normalized = value.trim().toLowerCase(Locale.ROOT);
+        if (normalized.equals("mysql") || normalized.equals("mariadb")) {
+            return normalized;
+        }
+        return "mysql";
+    }
+
+    private void readSyncItemsSettings(FileConfiguration syncData) {
         boolean syncItemsConfigEnabled = getBooleanAnyPath(
                 syncData,
-                fallbackSyncOn,
-                "SyncItems.on",
-                "sync-items.on",
-                "Sync-Items.on",
-                "Sync Items.on",
-                "sync.items.on"
+                true,
+                "enabled",
+                "SyncItems.enabled",
+                "sync-items.enabled",
+                "Sync-Items.enabled",
+                "Sync Items.enabled",
+                "sync.items.enabled"
         );
         this.syncItemsEnabled = syncItemsMainEnabled && syncItemsConfigEnabled;
         this.syncInventoryEnabled = getBooleanAnyPath(
                 syncData,
-                fallbackInventoryOn,
-                "SyncItems.inventory.on",
+                true,
+                "inventory.enabled",
+                "SyncItems.inventory.enabled",
                 "SyncItems.inventory",
-                "sync-items.inventory",
-                "sync-items.inventory.on"
+                "sync-items.inventory.enabled",
+                "sync-items.inventory"
         );
         this.syncEnderChestEnabled = getBooleanAnyPath(
                 syncData,
-                fallbackEnderChestOn,
-                "SyncItems.enderchest.on",
+                true,
+                "enderchest.enabled",
+                "SyncItems.enderchest.enabled",
                 "SyncItems.enderchest",
+                "sync-items.enderchest.enabled",
                 "sync-items.enderchest",
-                "sync-items.ender-chest",
-                "sync-items.enderchest.on"
+                "sync-items.ender-chest"
         );
         this.syncHotbarEnabled = getBooleanAnyPath(
                 syncData,
-                fallbackHotbarOn,
-                "SyncItems.hotbar.on",
+                true,
+                "hotbar.enabled",
+                "SyncItems.hotbar.enabled",
                 "SyncItems.hotbar",
-                "sync-items.hotbar",
-                "sync-items.hotbar.on"
+                "sync-items.hotbar.enabled",
+                "sync-items.hotbar"
         );
         this.syncExpireAfterSeconds = getIntAnyPath(
                 syncData,
-                fallbackExpireSeconds,
+                180,
+                "expire-after-seconds",
+                "delete-after-seconds",
                 "SyncItems.expire-after-seconds",
                 "SyncItems.delete-after-seconds",
                 "sync-items.expire-after-seconds",
@@ -1066,39 +1171,11 @@ public final class ConfigSystem {
         LinkedHashSet<String> normalizedKeys = new LinkedHashSet<>();
         addNormalizedKeys(normalizedKeys, getStringListAnyPath(
                 syncData,
+                "keys",
                 "SyncItems.keys",
                 "sync-items.keys",
                 "sync.items.keys"
         ));
-        addNormalizedKeys(normalizedKeys, getStringListAnyPath(
-                mainConfigData,
-                "config.SyncItems.keys",
-                "sync-items.keys",
-                "sync.items.keys"
-        ));
-
-        String legacySingleKey = getStringAnyPath(
-                syncData,
-                "",
-                "SyncItems.key",
-                "sync-items.key",
-                "sync.items.key"
-        );
-        if (legacySingleKey != null && !legacySingleKey.isBlank()) {
-            normalizedKeys.add(legacySingleKey.trim());
-        }
-
-        String legacyMainSingleKey = getStringAnyPath(
-                mainConfigData,
-                "",
-                "config.SyncItems.key",
-                "sync-items.key",
-                "sync.items.key"
-        );
-        if (legacyMainSingleKey != null && !legacyMainSingleKey.isBlank()) {
-            normalizedKeys.add(legacyMainSingleKey.trim());
-        }
-
         this.syncKeys = List.copyOf(normalizedKeys);
     }
 
@@ -1179,6 +1256,36 @@ public final class ConfigSystem {
         }
 
         return List.copyOf(commands);
+    }
+
+    private List<String> getConfiguredRootCommands(String sectionPath) {
+        List<CommandDefinition> definitions = getEnabledCommandDefinitions(sectionPath);
+        if (definitions.isEmpty()) {
+            return List.of();
+        }
+
+        LinkedHashSet<String> roots = new LinkedHashSet<>();
+        for (CommandDefinition definition : definitions) {
+            String root = parsePrimaryCommand(definition.command());
+            if (!root.isBlank()) {
+                roots.add(root.toLowerCase(Locale.ROOT));
+            }
+        }
+        return List.copyOf(roots);
+    }
+
+    private boolean containsIgnoreCase(List<String> values, String input) {
+        if (values == null || values.isEmpty() || input == null || input.isBlank()) {
+            return false;
+        }
+
+        String normalizedInput = input.trim();
+        for (String value : values) {
+            if (value != null && value.equalsIgnoreCase(normalizedInput)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private String parseModerationSubCommand(String fullCommand) {
